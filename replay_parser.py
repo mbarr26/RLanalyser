@@ -24,6 +24,7 @@ class PlayerStats:
     shots: int
     platform: str
     is_bot: bool
+    player_id: str = ""   # stable account id, survives name changes
 
 
 @dataclass
@@ -45,11 +46,21 @@ class ReplaySummary:
     seconds_played: float
     players: list[PlayerStats] = field(default_factory=list)
     goals: list[Goal] = field(default_factory=list)
+    recorded_by: str = ""   # name of the player who saved the replay, when the header has it
     raw: dict = field(default_factory=dict, repr=False)
 
     def team(self, team):
         """Players on a team (0 = blue, 1 = orange), highest score first."""
         return sorted((p for p in self.players if p.team == team), key=lambda p: -p.score)
+
+    @property
+    def winning_team(self):
+        if self.team0_score == self.team1_score:
+            return None
+        return 0 if self.team0_score > self.team1_score else 1
+
+    def player(self, player_id):
+        return next((p for p in self.players if p.player_id == player_id), None)
 
 
 def decode_replay(replay_path, network_parse=False):
@@ -90,6 +101,24 @@ def _platform_name(value):
     return str(value).replace("OnlinePlatform_", "") or "Unknown"
 
 
+def _player_id(p):
+    """Stable id for a player: platform + Epic account id, else platform user id.
+
+    Epic players have Uid "0", so their EpicAccountId is what identifies them.
+    Bots (and anything without an id) fall back to their name.
+    """
+    fields = (p.get("PlayerID") or {}).get("fields", {})
+    platform = _platform_name(fields.get("Platform") or p.get("Platform"))
+    account = fields.get("EpicAccountId") or ""
+    if not account and str(fields.get("Uid", "0")) != "0":
+        account = str(fields["Uid"])
+    if not account and str(p.get("OnlineID", "0")) != "0":
+        account = str(p["OnlineID"])
+    if p.get("bBot") or not account:
+        return f"name:{p.get('Name', '?')}"
+    return f"{platform}:{account}"
+
+
 def parse_replay(replay_path):
     """Decode a replay's header into a ReplaySummary."""
     data = decode_replay(replay_path)
@@ -106,6 +135,7 @@ def parse_replay(replay_path):
             shots=p.get("Shots", 0),
             platform=_platform_name(p.get("Platform")),
             is_bot=p.get("bBot", False),
+            player_id=_player_id(p),
         )
         for p in props.get("PlayerStats", [])
     ]
@@ -126,6 +156,7 @@ def parse_replay(replay_path):
         seconds_played=props.get("TotalSecondsPlayed", 0.0),
         players=players,
         goals=goals,
+        recorded_by=props.get("PlayerName", ""),
         raw=data,
     )
 

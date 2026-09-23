@@ -1,19 +1,23 @@
-"""RL Analyser - pick a Rocket League replay folder and load the most recent replay."""
+"""RL Analyser - browse every Rocket League replay in a folder and track your stats over time."""
 
 import json
+import queue
 import threading
-from datetime import datetime
+import time
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from analysis import STAT_GROUPS, player_stats, team_stats
+from analysis import STAT_GROUPS
 from frame_data import load_game_frames
 from pitch_viewer import PitchViewer
-from replay_parser import ReplayParseError, parse_replay
+from progress import guess_me
+from progress_view import ProgressPanel
+from replay_library import LibraryScanner, analyse, list_replays
+from replay_parser import ReplayParseError
 
 CONFIG_PATH = Path(__file__).with_name("config.json")
-REPLAY_EXTENSION = ".replay"
+PROGRESS_REFRESH_SECONDS = 2  # while scanning, redraw the progress tab at most this often
 
 # Where Rocket League usually saves replays (Epic/Steam, with or without OneDrive)
 DEFAULT_REPLAY_DIRS = [
@@ -34,6 +38,10 @@ def save_config(config):
     CONFIG_PATH.write_text(json.dumps(config, indent=2))
 
 
+def fmt_stat(fmt, value):
+    return "-" if value is None else fmt.format(value)
+
+
 def guess_replay_dir():
     """Return the saved folder, else the first default location that exists."""
     saved = load_config().get("replay_dir")
@@ -45,52 +53,79 @@ def guess_replay_dir():
     return None
 
 
-def find_latest_replay(folder):
-    """Return the most recently modified .replay file in folder, or None."""
-    replays = [
-        entry for entry in Path(folder).iterdir()
-        if entry.is_file() and entry.suffix.lower() == REPLAY_EXTENSION
-    ]
-    if not replays:
-        return None
-    return max(replays, key=lambda p: p.stat().st_mtime)
-
-
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("RL Analyser")
-        self.geometry("900x600")
+        self.geometry("1280x800")
 
         self.replay_dir = guess_replay_dir()
-        self.latest_replay = None
-        self.summary = None
+        self.chosen_me = load_config().get("me")  # player id of "you", once picked
+        self.guessed_me = None     # used until then (see progress.guess_me)
+        self.records = {}          # replay path -> ReplayRecord
+        self.scanner = None
+        self.current = None        # replay path shown in the Matches tab
+        self.game = None           # frame data for self.current, loaded for the viewer
+        self.analysing = set()     # replay paths being analysed because they were opened
+        self.inbox = queue.Queue()  # messages from background threads, handled on the UI thread
+        self.progress_dirty = False
+        self.progress_refreshed_at = 0.0
 
+        top = tk.Frame(self)
+        top.pack(fill="x", padx=12, pady=(10, 0))
+        tk.Label(top, text="Replay folder:", font=("Segoe UI", 10, "bold")).pack(side="left")
         self.folder_var = tk.StringVar()
-        self.replay_var = tk.StringVar()
+        tk.Label(top, textvariable=self.folder_var).pack(side="left", padx=6)
+        tk.Button(top, text="Choose folder...", command=self.choose_folder).pack(side="left", padx=(6, 0))
+        tk.Button(top, text="Refresh", command=self.refresh).pack(side="left", padx=6)
+        self.status_var = tk.StringVar()
+        tk.Label(top, textvariable=self.status_var, fg="#666").pack(side="right")
 
-        tk.Label(self, text="Replay folder:", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=12, pady=(12, 0))
-        tk.Label(self, textvariable=self.folder_var, wraplength=590, justify="left").pack(anchor="w", padx=12)
+        self.pages = ttk.Notebook(self)
+        self.pages.pack(fill="both", expand=True, padx=12, pady=10)
+        matches = ttk.PanedWindow(self.pages, orient="horizontal")
+        self.pages.add(matches, text="Matches")
+        self.progress = ProgressPanel(self.pages, self.open_replay, self.set_me)
+        self.pages.add(self.progress, text="My progress")
+        self.pages.bind("<<NotebookTabChanged>>", lambda e: self.refresh_progress())
 
-        buttons = tk.Frame(self)
-        buttons.pack(anchor="w", padx=12, pady=8)
-        tk.Button(buttons, text="Choose folder...", command=self.choose_folder).pack(side="left")
-        tk.Button(buttons, text="Refresh", command=self.refresh).pack(side="left", padx=6)
-        self.watch_button = tk.Button(buttons, text="Watch match", state="disabled", command=self.open_viewer)
-        self.watch_button.pack(side="left")
+        matches.add(self.build_replay_list(matches), weight=0)
+        matches.add(self.build_match_panel(matches), weight=1)
 
-        tk.Label(self, text="Most recent replay:", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=12)
-        tk.Label(self, textvariable=self.replay_var, wraplength=590, justify="left").pack(anchor="w", padx=12)
+        self.after(100, self.check_inbox)
+        self.refresh()
 
-        ttk.Separator(self).pack(fill="x", padx=12, pady=10)
+    # ---------- layout ----------
 
+    def build_replay_list(self, parent):
+        frame = tk.Frame(parent)
+        columns = [("Date", 115), ("Mode", 45), ("Map", 95), ("Score", 50), ("Result", 55)]
+        self.replay_list = ttk.Treeview(frame, columns=[h for h, _ in columns], show="headings")
+        for heading, width in columns:
+            self.replay_list.heading(heading, text=heading)
+            self.replay_list.column(heading, width=width, anchor="w" if heading == "Map" else "center")
+        self.replay_list.tag_configure("pending", foreground="#999")
+        scroll = ttk.Scrollbar(frame, orient="vertical", command=self.replay_list.yview)
+        self.replay_list.configure(yscrollcommand=scroll.set)
+        self.replay_list.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="left", fill="y")
+        self.replay_list.bind("<<TreeviewSelect>>", self.on_replay_selected)
+        return frame
+
+    def build_match_panel(self, parent):
+        panel = tk.Frame(parent)
+        header = tk.Frame(panel)
+        header.pack(fill="x", padx=(12, 0))
         self.match_var = tk.StringVar()
-        self.score_var = tk.StringVar()
-        tk.Label(self, textvariable=self.match_var, justify="left").pack(anchor="w", padx=12)
-        tk.Label(self, textvariable=self.score_var, font=("Segoe UI", 16, "bold")).pack(pady=(4, 8))
+        tk.Label(header, textvariable=self.match_var, justify="left").pack(side="left", anchor="w")
+        self.watch_button = tk.Button(header, text="Watch match", state="disabled", command=self.open_viewer)
+        self.watch_button.pack(side="right")
 
-        self.tabs = ttk.Notebook(self)
-        self.tabs.pack(fill="both", expand=True, padx=12, pady=(0, 4))
+        self.score_var = tk.StringVar()
+        tk.Label(panel, textvariable=self.score_var, font=("Segoe UI", 16, "bold")).pack(pady=(4, 8))
+
+        self.tabs = ttk.Notebook(panel)
+        self.tabs.pack(fill="both", expand=True, padx=(12, 0))
 
         scoreboard_tab = tk.Frame(self.tabs)
         self.tabs.add(scoreboard_tab, text="Scoreboard")
@@ -114,13 +149,9 @@ class App(tk.Tk):
             anchor="w", padx=8, pady=8
         )
 
-        self.status_var = tk.StringVar()
-        tk.Label(self, textvariable=self.status_var, fg="#666").pack(anchor="w", padx=12, pady=(0, 8))
-
-        self.analysis_result = None  # (player stats, match stats) or an Exception
-        self.analysis_for = None     # replay path the current analysis belongs to
-
-        self.refresh()
+        self.analysis_var = tk.StringVar()
+        tk.Label(panel, textvariable=self.analysis_var, fg="#666").pack(anchor="w", padx=12, pady=(4, 0))
+        return panel
 
     def make_table(self, parent, stat_columns):
         """Treeview with Team + Player columns followed by stat_columns [(heading, width)]."""
@@ -134,6 +165,8 @@ class App(tk.Tk):
         table.pack(fill="x")
         return table
 
+    # ---------- replay folder & background scanning ----------
+
     def choose_folder(self):
         folder = filedialog.askdirectory(
             title="Select your Rocket League replay folder",
@@ -146,85 +179,207 @@ class App(tk.Tk):
         self.refresh()
 
     def refresh(self):
-        self.latest_replay = None
-        self.analysis_for = None
-        self.game = None
-        self.watch_button.configure(state="disabled")
-        self.show_summary(None)
+        """Re-list the folder and (re)start loading every replay in the background."""
+        if self.scanner:
+            self.scanner.stop()
+        self.scanner = None
+        self.records = {}
+        self.replay_list.delete(*self.replay_list.get_children())
+        self.show_replay(None)
+        self.progress_dirty = True
 
         if not self.replay_dir:
             self.folder_var.set("No folder selected")
-            self.replay_var.set("-")
             return
-
         self.folder_var.set(str(self.replay_dir))
         try:
-            self.latest_replay = find_latest_replay(self.replay_dir)
+            paths = list_replays(self.replay_dir)
         except OSError as e:
             messagebox.showerror("RL Analyser", f"Could not read folder:\n{e}")
-            self.latest_replay = None
-
-        if not self.latest_replay:
-            self.replay_var.set("No .replay files found in this folder")
+            return
+        if not paths:
+            self.status_var.set("No .replay files found in this folder")
             return
 
-        modified = datetime.fromtimestamp(self.latest_replay.stat().st_mtime)
-        size_kb = self.latest_replay.stat().st_size / 1024
-        self.replay_var.set(
-            f"{self.latest_replay.name}\n"
-            f"Saved {modified:%d %b %Y %H:%M}  ·  {size_kb:,.0f} KB"
-        )
+        # Rows appear straight away (filename only) and fill in as each replay loads
+        for path in paths:
+            self.replay_list.insert("", "end", iid=str(path), values=(path.stem[:14], "", "", "", ""),
+                                    tags=("pending",))
+        scanner = LibraryScanner(paths, lambda message: self.inbox.put((scanner, *message)))
+        self.scanner = scanner
+        scanner.start()
+        self.replay_list.selection_set(str(paths[0]))  # newest replay
 
+    def check_inbox(self):
+        """Handle messages from background threads (tkinter must only be used on this thread)."""
         try:
-            self.summary = parse_replay(self.latest_replay)
-        except ReplayParseError as e:
-            messagebox.showerror("RL Analyser", f"Could not parse replay:\n{e}")
-            return
-        self.show_summary(self.summary)
-        self.start_analysis(self.latest_replay)
+            while True:
+                source, kind, *data = self.inbox.get_nowait()
+                if source is self.scanner or source == "open":
+                    getattr(self, f"on_{kind}")(*data)
+        except queue.Empty:
+            pass
+        if self.progress_dirty and time.monotonic() - self.progress_refreshed_at > PROGRESS_REFRESH_SECONDS:
+            self.refresh_progress()
+        self.after(100, self.check_inbox)
 
-    def start_analysis(self, replay):
-        """Decode the full frame data in the background so the window stays responsive."""
-        self.analysis_for = replay
-        self.analysis_result = None
-        self.status_var.set("Analysing frame data...")
+    @property
+    def me(self):
+        return self.chosen_me or self.guessed_me
+
+    def on_record(self, record):
+        self.records[record.path] = record
+        self.update_list_row(record)
+        self.progress_dirty = True
+        if record.path == self.current:
+            self.show_replay(self.current)
+
+    def on_progress(self, text):
+        self.status_var.set(text)
+
+    def on_done(self, unreadable):
+        self.update_guessed_me()
+        self.refresh_progress()
+        analysed = sum(r.analysed for r in self.records.values())
+        text = f"{len(self.records)} replays, {analysed} analysed"
+        if unreadable:
+            text += f"  ·  {unreadable} couldn't be read"
+        self.status_var.set(text)
+
+    def update_list_row(self, record):
+        s = record.summary
+        me = s.player(self.me) if self.me else None
+        result = ""
+        if me and s.winning_team is not None:
+            result = "Win" if s.winning_team == me.team else "Loss"
+        self.replay_list.item(str(record.path), tags=() if record.analysed else ("pending",), values=(
+            f"{record.played_at:%d %b %y %H:%M}", f"{s.team_size}v{s.team_size}", s.map_name,
+            f"{s.team0_score}-{s.team1_score}", result,
+        ))
+
+    def update_guessed_me(self):
+        guess = guess_me(self.records.values())
+        if guess != self.guessed_me:
+            self.guessed_me = guess
+            if not self.chosen_me:
+                for record in self.records.values():
+                    self.update_list_row(record)
+                if self.current:
+                    self.show_replay(self.current)  # re-mark "(you)" on the scoreboard
+
+    def set_me(self, player_id):
+        self.chosen_me = player_id
+        save_config({**load_config(), "me": player_id})
+        for record in self.records.values():
+            self.update_list_row(record)
+        if self.current:
+            self.show_replay(self.current)
+        self.refresh_progress()
+
+    def refresh_progress(self):
+        if self.pages.index("current") != 1:
+            return
+        if not self.chosen_me:
+            self.update_guessed_me()
+        self.progress_dirty = False
+        self.progress_refreshed_at = time.monotonic()
+        self.progress.refresh(list(self.records.values()), self.me)
+
+    # ---------- the selected replay ----------
+
+    def open_replay(self, path):
+        """Show a replay in the Matches tab (used by the progress tab's game list)."""
+        self.pages.select(0)
+        self.replay_list.selection_set(str(path))
+        self.replay_list.see(str(path))
+
+    def on_replay_selected(self, event):
+        selection = self.replay_list.selection()
+        if selection and Path(selection[0]) != self.current:
+            self.show_replay(Path(selection[0]))
+
+    def show_replay(self, path):
+        if path != self.current:
+            self.game = None
+        self.current = path
+        record = self.records.get(path)
+        self.show_summary(record.summary if record else None)
+        self.watch_button.configure(state="normal" if record and not record.error else "disabled")
+        if record is None:
+            self.analysis_var.set("Loading..." if path else "")
+        elif record.error:
+            self.analysis_var.set(f"Frame analysis failed: {record.error}")
+        elif record.players is None:
+            self.analysis_var.set("Analysing frame data...")
+            if path not in self.analysing:
+                self.start_analysis(path)
+        else:
+            self.show_analysis(record.players, record.match)
+            self.analysis_var.set("Frame stats count live play only (kickoffs included)")
+
+    def start_analysis(self, path):
+        """Analyse the selected replay now rather than waiting for its turn in the scan."""
+        self.analysing.add(path)
 
         def work():
             try:
-                game = load_game_frames(replay)
-                result = (game, player_stats(game), team_stats(game))
-            except Exception as e:  # shown to the user rather than lost in the thread
-                result = e
-            if self.analysis_for == replay:  # drop results a newer refresh has replaced
-                self.analysis_result = result
+                record, game = analyse(path)
+                self.inbox.put(("open", "analysed", record, game))
+            except (ReplayParseError, OSError) as e:
+                self.inbox.put(("open", "failed", path, str(e)))
 
         threading.Thread(target=work, daemon=True).start()
-        self.after(100, self.check_analysis, replay)
 
-    def check_analysis(self, replay):
-        if self.analysis_for != replay:
-            return  # a newer refresh has its own polling loop
-        if self.analysis_result is None:
-            self.after(100, self.check_analysis, replay)
+    def on_analysed(self, record, game):
+        self.analysing.discard(record.path)
+        if not self.replay_list.exists(str(record.path)):
+            return  # a different folder was loaded meanwhile
+        if record.path == self.current:
+            self.game = game
+        self.on_record(record)
+
+    def on_failed(self, path, message):
+        self.analysing.discard(path)
+        if path == self.current:
+            self.analysis_var.set(f"Could not analyse replay: {message}")
+
+    def on_frames(self, path, game):
+        if path != self.current:
             return
-        result = self.analysis_result
-        if isinstance(result, Exception):
-            self.status_var.set(f"Frame analysis failed: {result}")
-            return
-        self.game = result[0]
-        self.show_analysis(*result[1:])
         self.watch_button.configure(state="normal")
-        self.status_var.set("Frame analysis complete (live play only, kickoffs included)")
+        if isinstance(game, Exception):
+            self.analysis_var.set(f"Could not load match: {game}")
+            return
+        self.game = game
+        self.analysis_var.set("")
+        self.open_viewer()
 
     def open_viewer(self):
-        PitchViewer(self, self.game, self.summary.goals, title=f"Match viewer - {self.summary.name}")
+        summary = self.records[self.current].summary
+        if self.game is None:
+            # Frame data isn't cached (it's large), so load it now
+            self.watch_button.configure(state="disabled")
+            self.analysis_var.set("Loading match...")
+            path = self.current
+
+            def work():
+                try:
+                    game = load_game_frames(path)
+                except Exception as e:  # shown to the user rather than lost in the thread
+                    game = e
+                self.inbox.put(("open", "frames", path, game))
+
+            threading.Thread(target=work, daemon=True).start()
+            return
+        PitchViewer(self, self.game, summary.goals, title=f"Match viewer - {summary.name}")
 
     def show_analysis(self, players, match):
         for group, stats in STAT_GROUPS.items():
             table = self.stat_tables[group]
-            for name, row in players.iterrows():
-                values = [fmt.format(row[col]) for col, _, fmt in stats]
-                self.fill_row(table, int(row.team), name, values)
+            rows = sorted(players.items(), key=lambda item: (item[1]["team"], -(item[1]["avg_speed"] or 0)))
+            for name, row in rows:
+                values = [fmt_stat(fmt, row.get(col)) for col, _, fmt in stats]
+                self.fill_row(table, int(row["team"]), name, values)
 
         minutes, seconds = divmod(int(match["live_seconds"]), 60)
         self.match_stats_var.set(
@@ -242,11 +397,9 @@ class App(tk.Tk):
         table.insert("", "end", tags=(tag,), values=(label, name, *values))
 
     def show_summary(self, summary):
-        self.summary = summary
         for table in (self.scoreboard, *self.stat_tables.values()):
             table.delete(*table.get_children())
         self.match_stats_var.set("")
-        self.status_var.set("")
         if not summary:
             self.match_var.set("")
             self.score_var.set("")
@@ -264,6 +417,8 @@ class App(tk.Tk):
         for team in (0, 1):
             for p in summary.team(team):
                 name = f"{p.name} (bot)" if p.is_bot else p.name
+                if p.player_id == self.me:
+                    name += "  (you)"
                 self.fill_row(self.scoreboard, team, name, (p.score, p.goals, p.assists, p.saves, p.shots))
 
         # Goals in order, with the running score after each one

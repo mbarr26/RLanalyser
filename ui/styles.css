@@ -364,7 +364,11 @@ table.stat-table tr:hover td { background: var(--surface-sunken); }
 .compare-table tbody tr.selected td { background: var(--ink); color: var(--surface); }
 .compare-table tbody tr.selected td:first-child { color: var(--surface); }
 
-.chart-card { padding: 4px; }
+.chart-card { padding: 4px; display: flex; min-height: 360px; }
+/* canvas has no intrinsic size to grow from, so it must be told to fill its
+   flex parent explicitly - min-width/height:0 stop its own pixel size
+   (set in chart.js) from pushing the flex item back to its content size. */
+#trend-chart { flex: 1; min-width: 0; min-height: 0; display: block; }
 
 .section-label {
   color: var(--ink-secondary);

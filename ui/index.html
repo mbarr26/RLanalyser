@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>RL Analyser</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app">
+
+  <div class="titlebar">
+    <div class="wordmark">RL <span>Analyser</span></div>
+    <div class="folder-row">
+      <span id="folder-label" class="folder-label">No folder selected</span>
+    </div>
+    <button id="choose-folder-btn" class="btn">Choose folder&hellip;</button>
+    <button id="refresh-btn" class="btn">Refresh</button>
+    <span id="status" class="status"></span>
+  </div>
+
+  <div class="page-tabs">
+    <button class="page-tab active" data-page="matches">Matches</button>
+    <button class="page-tab" data-page="progress">My progress</button>
+  </div>
+
+  <!-- Matches -->
+  <div id="page-matches" class="page active">
+    <div id="replay-list" class="replay-list">
+      <div class="placeholder">No replays loaded yet</div>
+    </div>
+
+    <div class="match-panel">
+      <div id="match-empty" class="match-empty">Select a replay to see its stats</div>
+
+      <div id="match-content" style="display:none; flex-direction:column; min-height:0; flex:1;">
+        <div class="match-header">
+          <div class="match-header-top">
+            <div>
+              <div id="match-title" class="match-title"></div>
+              <div id="match-subtitle" class="match-subtitle"></div>
+            </div>
+            <button id="watch-btn" class="btn btn-primary" disabled>Watch match</button>
+          </div>
+          <div id="match-score" class="match-score"></div>
+        </div>
+
+        <div class="sub-tabs" id="sub-tabs">
+          <button class="sub-tab active" data-sub="scoreboard">Scoreboard</button>
+          <button class="sub-tab" data-sub="movement">Movement</button>
+          <button class="sub-tab" data-sub="positioning">Positioning</button>
+          <button class="sub-tab" data-sub="boost">Boost</button>
+          <button class="sub-tab" data-sub="match">Match</button>
+        </div>
+
+        <div id="sub-scoreboard" class="sub-page active">
+          <div class="card">
+            <table class="stat-table" id="scoreboard-table">
+              <thead><tr><th>Team</th><th>Player</th><th>Score</th><th>Goals</th><th>Assists</th><th>Saves</th><th>Shots</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div id="goals-line" class="goals-line"></div>
+        </div>
+
+        <div id="sub-movement" class="sub-page">
+          <div class="card"><table class="stat-table" id="table-movement"><thead></thead><tbody></tbody></table></div>
+        </div>
+        <div id="sub-positioning" class="sub-page">
+          <div class="card"><table class="stat-table" id="table-positioning"><thead></thead><tbody></tbody></table></div>
+        </div>
+        <div id="sub-boost" class="sub-page">
+          <div class="card"><table class="stat-table" id="table-boost"><thead></thead><tbody></tbody></table></div>
+        </div>
+        <div id="sub-match" class="sub-page">
+          <div class="card">
+            <div class="kv-grid" id="match-kv"></div>
+          </div>
+        </div>
+
+        <div id="analysis-note" class="analysis-note"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- My progress -->
+  <div id="page-progress" class="page">
+    <div class="progress-controls">
+      <span class="field-label">Player</span>
+      <select id="player-select" class="select" style="min-width:260px;"></select>
+      <button id="me-btn" class="btn" disabled>This is me</button>
+      <span class="field-label">Mode</span>
+      <select id="mode-select" class="select" style="min-width:90px;"><option>All</option></select>
+    </div>
+
+    <div id="progress-summary" class="progress-summary"></div>
+
+    <div class="progress-grid">
+      <div class="card">
+        <div class="section-label" style="padding:14px 16px 0;">Averages per game &middot; click a stat to chart it</div>
+        <table class="compare-table" id="compare-table">
+          <thead><tr><th>Stat</th><th>All</th><th>Last 10</th><th>Wins</th><th>Losses</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="card chart-card">
+        <canvas id="trend-chart"></canvas>
+      </div>
+    </div>
+
+    <div class="section-label">Games &middot; double-click to open</div>
+    <div class="card">
+      <table class="stat-table" id="games-table">
+        <thead>
+          <tr>
+            <th>Date</th><th>Mode</th><th>Map</th><th>Result</th><th>Score</th>
+            <th>Pts</th><th>G</th><th>A</th><th>Sv</th><th>Sh</th>
+            <th>Avg speed</th><th>% Behind ball</th><th>Avg boost</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- Watch match overlay -->
+<div id="viewer-overlay">
+  <div class="viewer-top">
+    <span id="viewer-score" class="viewer-score"></span>
+    <span id="viewer-clock" class="viewer-clock"></span>
+    <span id="viewer-state" class="viewer-state"></span>
+    <button id="viewer-close" class="viewer-close">Close &times;</button>
+  </div>
+  <div class="viewer-middle">
+    <canvas id="pitch-canvas"></canvas>
+    <div id="viewer-side" class="viewer-side"></div>
+  </div>
+  <div class="viewer-controls">
+    <button id="viewer-play" class="btn" style="width:64px;">Play</button>
+    <select id="viewer-speed" class="viewer-select">
+      <option>0.25x</option><option>0.5x</option><option selected>1x</option><option>2x</option><option>4x</option><option>8x</option>
+    </select>
+    <label class="viewer-check"><input type="checkbox" id="viewer-skip" checked /> Skip goal replays</label>
+    <input type="range" id="viewer-slider" min="0" max="1" step="0.01" value="0" />
+    <span id="viewer-time" class="viewer-time"></span>
+  </div>
+</div>
+
+<script src="chart.js"></script>
+<script src="pitch.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

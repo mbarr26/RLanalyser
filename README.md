@@ -1,8 +1,10 @@
 # RL Analyser
 
-A Windows desktop app (Python + Tkinter) for your Rocket League replays: browse every
-match in your replay folder, see detailed per-player stats, watch a top-down 2D
-playback, and track how your own stats change over time.
+A Windows desktop app for your Rocket League replays: browse every match in your
+replay folder, see detailed per-player stats, watch a top-down 2D playback, and
+track how your own stats change over time. The window is a native app (via
+pywebview) whose UI is an HTML/CSS/JS page — a clean, black-and-white design with
+layered cards and soft shadows.
 
 ## Features
 
@@ -21,7 +23,8 @@ playback, and track how your own stats change over time.
 - **Match** – live play time, average ball speed, and how long the ball spent in each
   half and third.
 - **Watch match** – opens a top-down pitch viewer that replays every car and the ball
-  moving in real time.
+  moving in real time, with play/pause, seek, speed control and a "skip goal
+  replays" toggle.
 
 ### My progress tab
 - **Player picker** – defaults to you. Choose anyone you've played with to view their
@@ -52,16 +55,33 @@ excluded).
 
 ## How it works
 
+The Python side does all the replay parsing, analysis and caching, exactly as
+before. The window itself is a [pywebview](https://pywebview.flowrx.dev/) native
+window showing `ui/index.html`; Python and the page talk to each other in both
+directions:
+
+- **Page → Python**: the page calls `window.pywebview.api.*` (the `Api` class in
+  `rl_analyser.py`) to choose a folder, refresh, request a replay's frame stats,
+  fetch a player's progress, or load a match's playback track.
+- **Python → page**: background threads (scanning the folder, analysing a replay)
+  push results to the page with `window.evaluate_js`, calling methods on the page's
+  `window.app` object as they complete — the same one-way flow the previous Tkinter
+  version used with its message queue, just targeting a page instead of widgets.
+
 | File | Purpose |
 |------|---------|
-| `rl_analyser.py` | Main app / entry point. Window layout, replay list, Matches tab, and the queue that background threads use to send results to the UI. |
+| `rl_analyser.py` | Native window + `Api`: hosts the page, runs the background scan/analysis threads, and exposes the methods the page calls into. |
+| `ui/index.html` | Page structure: the Matches and My progress tabs, and the Watch match overlay. |
+| `ui/styles.css` | The design system — monochrome palette, shadows, cards, typography. |
+| `ui/app.js` | Page controller: renders every table/list, talks to `pywebview.api`, and handles the pushes from Python (`window.app.*`). |
+| `ui/chart.js` | Canvas-drawn trend chart (per-game dots + rolling average, with hover). |
+| `ui/pitch.js` | Canvas-drawn "Watch match" viewer: playback, pitch geometry, cars and ball. |
 | `replay_library.py` | Lists replays in a folder, analyses them (`analyse`), caches results as JSON in `cache/`, and `LibraryScanner` (background thread that loads/analyses a whole folder). |
 | `replay_parser.py` | Runs `tools/rrrocket.exe` on a replay and turns the header into a `ReplaySummary` (scores, players with stable `player_id`, goals, who recorded it). |
 | `frame_data.py` | Runs rrrocket with `--network-parse` and converts the network frames into pandas tables: `frames`, `ball`, `players`, `pickups` (`GameFrames`). |
-| `analysis.py` | Computes per-player stats (`player_stats`) and match stats (`team_stats`) from `GameFrames`. `STAT_GROUPS` defines which stats appear in which tab. |
+| `analysis.py` | Computes per-player stats (`player_stats`) and match stats (`team_stats`) from `GameFrames`. `STAT_GROUPS` defines which stats appear in which tab (sent to the page so it can build the tables generically). |
 | `progress.py` | Cross-replay stats for one player: `player_games` (one row per game), `comparison` (all / last 10 / wins / losses averages), `known_players`, `guess_me`. |
-| `progress_view.py` | The My progress tab (`ProgressPanel`) and its `TrendChart` canvas. |
-| `pitch_viewer.py` | `PitchViewer` window: 2D top-down playback of the match. |
+| `pitch_viewer.py` | `build_track`: turns a match's frame data into the JSON-serialisable track `ui/pitch.js` plays back. |
 | `tools/rrrocket.exe` | Third-party [rrrocket](https://github.com/nickbabcock/rrrocket) replay decoder used by the parsers. |
 | `config.json` | Local settings: replay folder and which player is you. Not committed to git. |
 | `cache/` | Per-replay analysis results. Safe to delete (it's rebuilt). Not committed to git. |
@@ -80,12 +100,16 @@ goal; the pitch is x ∈ [−4096, 4096], y ∈ [−5120, 5120].
   still shows; frame stats appear as "-" and Watch match is disabled. Fix: drop a newer
   `rrrocket.exe` into `tools/` when one is released, then press Refresh (a changed
   rrrocket.exe automatically invalidates the cache, so every replay is re-analysed).
+  As of 24 Sept 2026 no new release exists yet, but [boxcars PR #296](https://github.com/nickbabcock/boxcars/pull/296)
+  looks like the fix and is under review.
 
 ## Requirements
 
-- Windows (rrrocket is bundled as a Windows `.exe`)
+- Windows (rrrocket is bundled as a Windows `.exe`; the window uses the Edge WebView2
+  runtime, which ships with Windows 11 / is auto-installed on Windows 10)
 - Python 3.10+
-- `pandas` and `numpy` (`pip install pandas numpy`); Tkinter ships with Python
+- `pandas`, `numpy` and `pywebview` (`pip install pandas numpy pywebview`); no other
+  UI toolkit needed
 
 ## Running
 

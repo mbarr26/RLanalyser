@@ -103,7 +103,7 @@ goal; the pitch is x ∈ [−4096, 4096], y ∈ [−5120, 5120].
 - **Upgrading rrrocket in future:** download the `x86_64-pc-windows-msvc` zip from the
   [rrrocket releases](https://github.com/nickbabcock/rrrocket/releases), drop its
   `rrrocket.exe` into `tools/`, then press Refresh. A changed rrrocket.exe automatically
-  invalidates the cache, so every replay is re-analysed. The exe is not committed to git.
+  invalidates the cache, so every replay is re-analysed. The exe is committed to git, so commit and push it after upgrading.
 
 ## Requirements
 

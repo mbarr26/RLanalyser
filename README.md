@@ -94,14 +94,16 @@ goal; the pitch is x ∈ [−4096, 4096], y ∈ [−5120, 5120].
 
 ## Known issues
 
-- Replays from very recent Rocket League updates can fail frame analysis because
-  rrrocket doesn't understand new replay data yet (e.g. games from late Sept 2026 hit
-  `TAGame.PRI_TA:PlayerStatus`, which rrrocket v0.11.5 can't decode). Their scoreboard
-  still shows; frame stats appear as "-" and Watch match is disabled. Fix: drop a newer
-  `rrrocket.exe` into `tools/` when one is released, then press Refresh (a changed
-  rrrocket.exe automatically invalidates the cache, so every replay is re-analysed).
-  As of 24 Sept 2026 no new release exists yet, but [boxcars PR #296](https://github.com/nickbabcock/boxcars/pull/296)
-  looks like the fix and is under review.
+- Replays from a brand-new Rocket League update can fail frame analysis until rrrocket
+  learns the new replay data (the Season 24 update added `TAGame.PRI_TA:PlayerStatus`,
+  which rrrocket v0.11.5 couldn't decode). Their scoreboard still shows; frame stats
+  appear as "-" and Watch match is disabled.
+- **Current status:** `tools/rrrocket.exe` is v0.11.6 (released 28 Sept 2026, includes
+  [boxcars PR #296](https://github.com/nickbabcock/boxcars/pull/296) Season 24 support).
+- **Upgrading rrrocket in future:** download the `x86_64-pc-windows-msvc` zip from the
+  [rrrocket releases](https://github.com/nickbabcock/rrrocket/releases), drop its
+  `rrrocket.exe` into `tools/`, then press Refresh. A changed rrrocket.exe automatically
+  invalidates the cache, so every replay is re-analysed. The exe is not committed to git.
 
 ## Requirements
 

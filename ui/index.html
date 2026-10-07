@@ -50,6 +50,7 @@
           <button class="sub-tab" data-sub="positioning">Positioning</button>
           <button class="sub-tab" data-sub="boost">Boost</button>
           <button class="sub-tab" data-sub="match">Match</button>
+          <button class="sub-tab" data-sub="coach">AI Coach</button>
         </div>
 
         <div id="sub-scoreboard" class="sub-page active">
@@ -74,6 +75,34 @@
         <div id="sub-match" class="sub-page">
           <div class="card">
             <div class="kv-grid" id="match-kv"></div>
+          </div>
+        </div>
+
+        <div id="sub-coach" class="sub-page">
+          <div id="coach-note" class="coach-note"></div>
+          <div id="coach-body" style="display:none;">
+            <div class="section-label">Findings</div>
+            <div class="card coach-card"><ul id="coach-insights" class="coach-list"></ul></div>
+
+            <div class="section-label">AI analysis</div>
+            <div class="card coach-card">
+              <div id="coach-setup" class="coach-setup"></div>
+              <div id="coach-report"></div>
+            </div>
+
+            <div class="section-label">Key moments &middot; click Watch to jump to it in the replay</div>
+            <div id="coach-moments" class="coach-moments"></div>
+
+            <div class="section-label">Ask the coach</div>
+            <div class="card coach-card">
+              <div id="chat-log" class="chat-log"></div>
+              <form id="chat-form" class="chat-form" autocomplete="off">
+                <input id="chat-input" class="chat-input" type="text"
+                       placeholder="e.g. why did we concede the second goal? what went wrong at 2:30?" />
+                <button id="chat-send" class="btn btn-primary" type="submit">Send</button>
+                <button id="chat-clear" class="btn" type="button">Clear</button>
+              </form>
+            </div>
           </div>
         </div>
 
@@ -150,5 +179,6 @@
 <script src="chart.js"></script>
 <script src="pitch.js"></script>
 <script src="app.js"></script>
+<script src="coach.js"></script>
 </body>
 </html>

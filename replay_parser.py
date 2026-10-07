@@ -6,7 +6,9 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-RRROCKET_PATH = Path(__file__).with_name("tools") / "rrrocket.exe"
+from paths import bundled
+
+RRROCKET_PATH = bundled("tools", "rrrocket.exe")
 
 
 class ReplayParseError(Exception):

@@ -10,21 +10,24 @@ message queue, just targeting a page instead of Tk widgets.
 
 import json
 import threading
+import time
 from dataclasses import asdict
 from pathlib import Path
 
 import pandas as pd
 import webview
 
+import coach
 from analysis import STAT_GROUPS
 from frame_data import load_game_frames
+from paths import bundled, user_data
 from pitch_viewer import build_track
 from progress import PROGRESS_STATS, comparison, guess_me, player_games
 from replay_library import LibraryScanner, analyse, list_replays
 from replay_parser import ReplayParseError
 
-CONFIG_PATH = Path(__file__).with_name("config.json")
-UI_DIR = Path(__file__).with_name("ui")
+CONFIG_PATH = user_data("config.json")
+UI_DIR = bundled("ui")
 
 # Where Rocket League usually saves replays (Epic/Steam, with or without OneDrive)
 DEFAULT_REPLAY_DIRS = [
@@ -60,6 +63,11 @@ def _num(value):
     return None if pd.isna(value) else float(value)
 
 
+def coach_tier():
+    tier = load_config().get("coach_tier")
+    return tier if tier in coach.TIERS else coach.DEFAULT_TIER
+
+
 # ---------- app state (mirrors the old App instance's fields) ----------
 
 WINDOW = None
@@ -69,6 +77,14 @@ GUESSED_ME = None                     # used until then (see progress.guess_me)
 RECORDS = {}                          # path -> ReplayRecord
 SCANNER = None
 ANALYSING = set()                     # replay paths being analysed because they were opened
+
+# AI coach state. Facts (moments, insights, frame data) and chats are kept for the few most
+# recently opened replays only, since each holds a whole match's frame tables.
+COACH_KEEP = 3
+COACH_FACTS = {}                      # path -> coach.analyse_for_coach result, plus "game"
+COACH_CHATS = {}                      # path -> coach.CoachChat
+COACH_BUSY = set()                    # ("report" | "chat", path) currently running
+DOWNLOAD_CANCEL = None                # threading.Event while a model download runs
 
 
 def effective_me():
@@ -256,6 +272,141 @@ class Api:
             return {"error": str(e) or type(e).__name__}
         return build_track(game, record.summary.goals)
 
+    # ---------- AI coach ----------
+
+    def coach_status(self):
+        return coach.status(coach_tier())
+
+    def coach_set_tier(self, tier):
+        if tier in coach.TIERS:
+            save_config({**load_config(), "coach_tier": tier})
+        return coach.status(coach_tier())
+
+    def coach_download(self):
+        """Download the chosen model in the background; progress arrives as onCoachDownload."""
+        global DOWNLOAD_CANCEL
+        if DOWNLOAD_CANCEL is not None:
+            return None
+        tier, cancel = coach_tier(), threading.Event()
+        DOWNLOAD_CANCEL = cancel
+
+        def work():
+            global DOWNLOAD_CANCEL
+            try:
+                coach.download_model(
+                    tier, lambda done, total, phase: push("onCoachDownload", {"done": done, "total": total, "phase": phase}), cancel)
+                push("onCoachDownload", {"finished": True})
+            except coach.CoachError as e:
+                push("onCoachDownload", {"error": str(e)})
+            except Exception as e:
+                push("onCoachDownload", {"error": f"Unexpected error: {e}"})
+            finally:
+                DOWNLOAD_CANCEL = None
+
+        threading.Thread(target=work, daemon=True).start()
+        return None
+
+    def coach_cancel_download(self):
+        if DOWNLOAD_CANCEL is not None:
+            DOWNLOAD_CANCEL.set()
+        return None
+
+    def get_coach(self, path):
+        """Moments and rule-based findings for a match (no AI needed), plus any saved AI report."""
+        path = Path(path)
+        record = RECORDS.get(path)
+        if record is None or not record.analysed or record.error:
+            return {"error": "This match hasn't been analysed yet."}
+        try:
+            game = load_game_frames(path)
+            facts = coach.analyse_for_coach(record, game, effective_me(), list(RECORDS.values()))
+        except coach.CoachError as e:
+            return {"error": str(e)}
+        except Exception as e:  # shown to the user rather than lost
+            return {"error": str(e) or type(e).__name__}
+        # The chat needs the frame data to look up positions at a given time; keep a few matches only
+        COACH_FACTS.pop(path, None)
+        COACH_FACTS[path] = {**facts, "game": game}
+        while len(COACH_FACTS) > COACH_KEEP:
+            COACH_FACTS.pop(next(iter(COACH_FACTS)))
+        # Keep the conversation only if the match data it was based on is unchanged
+        chat = COACH_CHATS.get(path)
+        chat_kept = chat is not None and chat.dossier == facts["dossier"]
+        if not chat_kept:
+            COACH_CHATS.pop(path, None)
+        return {
+            "path": str(path), "me": facts["me"], "team": facts["team"], "moments": facts["moments"],
+            "insights": facts["insights"], "report": coach.load_report(path, coach_tier(), facts["me"]),
+            "chatKept": chat_kept,
+        }
+
+    def coach_generate(self, path):
+        """Write the AI analysis in the background; the result arrives as onCoachReport."""
+        path = Path(path)
+        facts = COACH_FACTS.get(path)
+        key = ("report", path)
+        if facts is None or key in COACH_BUSY:
+            return None
+        COACH_BUSY.add(key)
+        tier = coach_tier()
+
+        def work():
+            try:
+                coach.ensure_server(tier, lambda state: push("onCoachState", str(path), state))
+                push("onCoachState", str(path), "writing")
+                report = coach.generate_report(facts["dossier"], facts["moments"], facts["me"], facts["team"], tier)
+                coach.save_report(path, tier, facts["me"], report)
+                push("onCoachReport", str(path), report)
+            except coach.CoachError as e:
+                push("onCoachError", str(path), str(e))
+            except Exception as e:
+                push("onCoachError", str(path), f"Unexpected error: {e}")
+            finally:
+                COACH_BUSY.discard(key)
+
+        threading.Thread(target=work, daemon=True).start()
+        return None
+
+    def coach_ask(self, path, question):
+        """Answer a question about a match; the reply streams in as onChatDelta, then onChatDone."""
+        path = Path(path)
+        facts = COACH_FACTS.get(path)
+        key = ("chat", path)
+        if facts is None or key in COACH_BUSY or not question.strip():
+            return None
+        COACH_BUSY.add(key)
+        tier = coach_tier()
+        chat = COACH_CHATS.get(path)
+        if chat is None or chat.tier != tier:
+            chat = COACH_CHATS[path] = coach.CoachChat(
+                facts["dossier"], facts["moments"], facts["me"], facts["team"], facts["game"], tier)
+
+        def work():
+            try:
+                coach.ensure_server(tier, lambda state: push("onCoachState", str(path), state))
+                pending, last_push = [], time.monotonic()
+                for piece in chat.ask(question.strip()):
+                    pending.append(piece)
+                    if time.monotonic() - last_push > 0.08:   # batch tiny pieces so the page isn't flooded
+                        push("onChatDelta", str(path), "".join(pending))
+                        pending, last_push = [], time.monotonic()
+                if pending:
+                    push("onChatDelta", str(path), "".join(pending))
+                push("onChatDone", str(path))
+            except coach.CoachError as e:
+                push("onChatError", str(path), str(e))
+            except Exception as e:
+                push("onChatError", str(path), f"Unexpected error: {e}")
+            finally:
+                COACH_BUSY.discard(key)
+
+        threading.Thread(target=work, daemon=True).start()
+        return None
+
+    def coach_reset(self, path):
+        COACH_CHATS.pop(Path(path), None)
+        return None
+
 
 def main():
     global WINDOW
@@ -269,6 +420,7 @@ def main():
         background_color="#f7f7f5",
     )
     webview.start()
+    coach.stop_server()   # the AI engine is a separate process; don't leave it running
 
 
 if __name__ == "__main__":

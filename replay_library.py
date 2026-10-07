@@ -14,9 +14,10 @@ from pathlib import Path
 
 from analysis import player_stats, team_stats
 from frame_data import load_game_frames
+from paths import user_data
 from replay_parser import RRROCKET_PATH, Goal, PlayerStats, ReplayParseError, ReplaySummary, parse_replay
 
-CACHE_DIR = Path(__file__).with_name("cache")
+CACHE_DIR = user_data("cache")
 # Bump whenever parsing or stats change, so every replay is re-analysed with the new code
 CACHE_VERSION = 1
 REPLAY_EXTENSION = ".replay"

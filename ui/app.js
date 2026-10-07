@@ -92,6 +92,7 @@ function switchPage(name) {
 function switchSubTab(name) {
   document.querySelectorAll(".sub-tab").forEach(b => b.classList.toggle("active", b.dataset.sub === name));
   document.querySelectorAll(".sub-page").forEach(p => p.classList.toggle("active", p.id === `sub-${name}`));
+  if (name === "coach" && state.currentPath) coachUi.open(state.currentPath);
 }
 
 function isProgressActive() {
@@ -210,6 +211,7 @@ function showReplay(path) {
     renderStatTables(record);
     setAnalysisNote("Frame stats count live play only (kickoffs included)");
   }
+  if (coachUi.isActive()) coachUi.open(path);
 }
 
 function setAnalysisNote(text) { document.getElementById("analysis-note").textContent = text; }
@@ -302,7 +304,7 @@ function renderMatchKv(match) {
 
 // ---------- watch match ----------
 
-async function openViewer() {
+async function openViewer(startTime) {
   if (!state.currentPath) return;
   const btn = document.getElementById("watch-btn");
   btn.disabled = true;
@@ -327,6 +329,8 @@ async function openViewer() {
       slider: document.getElementById("viewer-slider"),
       time: document.getElementById("viewer-time"),
     }, track);
+    // Jumping in from an AI Coach moment: start a few seconds before it, paused
+    if (typeof startTime === "number") state.viewer.seek(startTime - 3);
   }
   btn.textContent = "Watch match";
   const record = state.records.get(state.currentPath);
@@ -490,6 +494,7 @@ window.app = {
       if (r) renderScoreboard(r.summary);
     }
     progressDirty = true;
+    coachUi.invalidate();   // the coach talks to "you", so a new "you" means new findings
   },
   onError(message) {
     alert(message);

@@ -20,6 +20,15 @@ layered cards and soft shadows.
   average distance to the ball, % closest / farthest from the ball on their team.
 - **Boost** – average boost, boost used and collected, big/small pads, stolen big
   pads, % time at 0 and at 100 boost.
+- **Challenges** – touches (and per minute), % possession (time as the last player to touch
+  the ball), 50/50s and your win rate in them, and times you were beaten (you went for the
+  ball, an opponent got it first and it went past you towards your goal).
+- **Mechanics** – aerial touches (and high ones above crossbar height), wall touches, flip
+  touches, hardest hit, dribbles (ball carried on the roof for 1 s+), flips, double jumps,
+  half-flips and wave dashes.
+- **Defence** – clears out of your defensive third, % shadowing (back between the ball and
+  your goal at a sensible distance while it heads your way), % as last man, and times beaten
+  as last man.
 - **Match** – live play time, average ball speed, and how long the ball spent in each
   half and third.
 - **Watch match** – opens a top-down pitch viewer that replays every car and the ball
@@ -42,7 +51,9 @@ layered cards and soft shadows.
 - **Findings** – short rule-based notes about *you* in this game, compared with your usual
   averages ("you were ahead of the ball on 2 of the 3 goals you conceded"). No AI needed.
 - **Key moments** – goals (with where the defenders were 3 seconds earlier), "nobody
-  back" spells, double commits and long stretches out of boost, each with the game clock.
+  back" spells, double commits, long stretches out of boost, 50/50s lost just before a goal,
+  last men beaten just before a goal, plus good plays (aerial goals, big clears), each with
+  the game clock.
   **Watch** opens the replay viewer a few seconds before that moment. No AI needed.
 - **AI analysis** – a small language model that runs **on your own PC** (free, private,
   offline) reads those measured facts and writes a summary, strengths, things to improve,
@@ -100,10 +111,11 @@ directions:
 | `ui/pitch.js` | Canvas-drawn "Watch match" viewer: playback, pitch geometry, cars and ball. |
 | `replay_library.py` | Lists replays in a folder, analyses them (`analyse`), caches results as JSON in `cache/`, and `LibraryScanner` (background thread that loads/analyses a whole folder). |
 | `replay_parser.py` | Runs `tools/rrrocket.exe` on a replay and turns the header into a `ReplaySummary` (scores, players with stable `player_id`, goals, who recorded it). |
-| `frame_data.py` | Runs rrrocket with `--network-parse` and converts the network frames into pandas tables: `frames`, `ball`, `players`, `pickups` (`GameFrames`). |
+| `frame_data.py` | Runs rrrocket with `--network-parse` and converts the network frames into pandas tables: `frames`, `ball` (with the game's last-touch team), `players` (with jump / double-jump / dodge states), `pickups` (`GameFrames`). Also holds the shared pitch constants. |
 | `analysis.py` | Computes per-player stats (`player_stats`) and match stats (`team_stats`) from `GameFrames`. `STAT_GROUPS` defines which stats appear in which tab (sent to the page so it can build the tables generically). |
 | `progress.py` | Cross-replay stats for one player: `player_games` (one row per game), `comparison` (all / last 10 / wins / losses averages), `known_players`, `guess_me`. |
 | `pitch_viewer.py` | `build_track`: turns a match's frame data into the JSON-serialisable track `ui/pitch.js` plays back. |
+| `touches.py` | Ball touches (the ball's velocity jumps while a car is next to it), 50/50s, beaten-to-the-ball events, dribbles, half-flips / wave dashes, last man, and `skill_stats` (the Challenges / Mechanics / Defence columns). Also the shared per-frame table `live_table` and `find_runs`. Pure measurement, no AI. |
 | `moments.py` | Rule-based key-moment detection (`detect_moments`) and findings about a player (`insights`). Pure measurement, no AI. |
 | `coach.py` | The AI layer: model download, llama.cpp server management, the match "dossier" given to the model, report generation, and chat. Also a CLI: `python coach.py match.replay --me "Name"`. |
 | `paths.py` | Where files live: `bundled()` for shipped files, `user_data()` for config/cache, `models_dir()` for AI models. Works from source and from a packaged build. |
@@ -131,6 +143,11 @@ goal; the pitch is x ∈ [−4096, 4096], y ∈ [−5120, 5120].
   `rrrocket.exe` into `tools/`, then press Refresh. A changed rrrocket.exe automatically
   invalidates the cache, so every replay is re-analysed. The exe is committed to git, so
   commit and push it after upgrading.
+- The touch, 50/50, beaten, dribble, half-flip, wave-dash and shadowing rules are first-draft
+  thresholds (constants at the top of `touches.py`). On real replays the scorer was the last
+  toucher on 26 of 34 goals (the rest are mostly deflections off a defender or shots longer
+  than 4 s), and touches came out at roughly 6-9 per player per minute. Treat half-flips and
+  wave dashes as best-effort; "times beaten" looks high and may need a stricter rule.
 - The AI coach has only been tested against a synthetic match so far (no real replays were
   available during development): the Lite model's report and chat both worked end to end. The
   key-moment rules are first-draft thresholds (constants at the top of `moments.py`) that need

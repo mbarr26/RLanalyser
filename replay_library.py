@@ -19,7 +19,7 @@ from replay_parser import RRROCKET_PATH, Goal, PlayerStats, ReplayParseError, Re
 
 CACHE_DIR = user_data("cache")
 # Bump whenever parsing or stats change, so every replay is re-analysed with the new code
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 REPLAY_EXTENSION = ".replay"
 
 

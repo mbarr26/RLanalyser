@@ -31,7 +31,7 @@ from moments import detect_moments, fmt_clock, insights
 from paths import LOCAL_DIR, bundled, models_dir, user_data
 
 # Bump when prompts, the dossier or the report format change, so old saved reports are redone
-COACH_VERSION = 1
+COACH_VERSION = 2
 
 SERVER_EXE = bundled("tools", "llama-server", "llama-server.exe")
 CTX_SIZE = 8192
@@ -287,6 +287,10 @@ DOSSIER_STATS = [
     ("avg_dist_to_ball", "avg dist to ball"), ("pct_closest_to_ball", "% closest to ball on team"),
     ("avg_boost", "avg boost"), ("pct_zero_boost", "% at 0 boost"), ("boost_used", "boost used"),
     ("big_pads", "big pads"), ("stolen_big_pads", "stolen big pads"),
+    ("touches", "touches"), ("pct_possession", "% possession"), ("fifty_fifties", "50/50s"),
+    ("fifty_win_pct", "50/50 win %"), ("times_beaten", "times beaten after committing"),
+    ("aerial_touches", "aerial touches"), ("dodge_touches", "flip touches"), ("clears", "clears"),
+    ("pct_shadowing", "% shadowing"), ("pct_last_man", "% last man"), ("last_man_beaten", "beaten as last man"),
 ]
 TEAM = {0: "Blue", 1: "Orange"}
 
@@ -297,7 +301,8 @@ You are given measured facts about the match: stats, a list of key moments (each
 - Talk to the player as "you". Be specific and brief: short sentences, concrete advice (rotation, boost management, challenging, shadow defending, positioning).
 - Refer to key moments by their id.
 - Only call something a strength or weakness if the RULE-BASED FINDINGS or KEY MOMENTS say so, or if it clearly differs from the player's USUAL AVERAGES. Never judge a raw stat on its own.
-- How to read the stats: "% behind ball" higher = better defensive positioning; "% at 0 boost" lower = better; "% closest to ball on team" is just involvement, not good or bad; "avg dist to ball" is context only."""
+- How to read the stats: "% behind ball" higher = better defensive positioning; "% at 0 boost" lower = better; "% closest to ball on team" is just involvement, not good or bad; "avg dist to ball" is context only.
+- Challenge and skill stats: "50/50 win %" higher = better; "times beaten after committing" and "beaten as last man" lower = better; "% shadowing" higher = better defending; "touches", "% possession", "% last man", "aerial touches" and "flip touches" describe style and involvement, so only judge them against the player's USUAL AVERAGES or a key moment."""
 
 REPORT_TASK = """Write the match analysis for {me} as JSON.
 - summary: 2-3 sentences on how the game went and why.

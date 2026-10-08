@@ -11,6 +11,11 @@ import pandas as pd
 
 from replay_parser import decode_replay
 
+GROUND_HEIGHT = 20               # a car resting on the floor sits at z ~17
+GOAL_HEIGHT = 642                # crossbar height; above this counts as "high air"
+PITCH_HALF_LENGTH = 5120
+THIRD_LINE = PITCH_HALF_LENGTH / 3   # thirds split at y = +/-1707
+
 BOOST_MAX_RAW = 255              # replicated boost is 0-255; displayed as 0-100
 BOOST_DRAIN_PER_SEC = 255 / 3    # a full tank lasts 3 seconds of boosting
 
@@ -49,8 +54,10 @@ def extract_frames(decoded):
     rigid_body = {}      # actor -> latest RigidBody state
     boost_raw = {}       # boost component actor -> current boost (0-255)
     boost_active = {}    # boost component actor -> currently boosting
+    move_active = {}     # jump / double jump / dodge component actor -> currently active
     pad_counter = {}     # boost pad actor -> last picked_up counter seen
     ball_actor = None
+    hit_team = None      # team of the last car to touch the ball, as the game reports it
     state = ""
     seconds_remaining = None
     ball_hit = False     # False from each countdown until the kickoff touch
@@ -68,7 +75,7 @@ def extract_frames(decoded):
 
     def forget(actor):
         for d in (actor_type, car_pri, pri_name, pri_team_actor, comp_car,
-                  rigid_body, boost_raw, boost_active, pad_counter):
+                  rigid_body, boost_raw, boost_active, move_active, pad_counter):
             d.pop(actor, None)
 
     for i, frame in enumerate(net_frames):
@@ -108,8 +115,13 @@ def extract_frames(decoded):
                 boost_raw[actor] = attr["ReplicatedBoost"]["boost_amount"]
             elif prop == "ReplicatedActive":
                 # Counter that increments on each toggle: odd = active
-                if "Boost" in actor_type.get(actor, ""):
+                kind = actor_type.get(actor, "")
+                if "Boost" in kind:
                     boost_active[actor] = attr["Byte"] % 2 == 1
+                elif "CarComponent_Jump" in kind or "CarComponent_DoubleJump" in kind or "CarComponent_Dodge" in kind:
+                    move_active[actor] = attr["Byte"] % 2 == 1
+            elif prop == "HitTeamNum":
+                hit_team = attr.get("Byte")
             elif prop == "ReplicatedStateName":
                 state = names[attr["Int"]]
                 if state == "Countdown":
@@ -134,9 +146,16 @@ def extract_frames(decoded):
 
         if ball_actor in rigid_body:
             rb = rigid_body[ball_actor]
-            ball_rows.append((i, time, *_vec(rb["location"]), *_vec(rb.get("linear_velocity"))))
+            ball_rows.append((i, time, *_vec(rb["location"]), *_vec(rb.get("linear_velocity")), hit_team))
 
         boost_comp_of_car = {car: comp for comp, car in comp_car.items() if comp in boost_raw}
+        moves_of_car = {}    # car -> {"jump": bool, "double_jump": bool, "dodge": bool}
+        for comp, car in comp_car.items():
+            kind = actor_type.get(comp, "")
+            slot = ("double_jump" if "DoubleJump" in kind else "jump" if "Jump" in kind
+                    else "dodge" if "Dodge" in kind else None)
+            if slot and comp in move_active:
+                moves_of_car.setdefault(car, {})[slot] = move_active[comp]
         for car, pri in car_pri.items():
             if car not in rigid_body or pri not in pri_name:
                 continue
@@ -149,21 +168,23 @@ def extract_frames(decoded):
             boost = boost_raw.get(comp)
             vx, vy, vz = _vec(rb.get("linear_velocity"))
             rot = rb.get("rotation") or {}
+            moves = moves_of_car.get(car, {})
             player_rows.append((
                 i, time, pri_name[pri], team_of(pri),
                 *_vec(rb["location"]), vx, vy, vz, math.sqrt(vx * vx + vy * vy + vz * vz),
                 rot.get("x"), rot.get("y"), rot.get("z"), rot.get("w"),
                 None if boost is None else boost / BOOST_MAX_RAW * 100, boosting,
+                moves.get("jump", False), moves.get("double_jump", False), moves.get("dodge", False),
             ))
 
     return GameFrames(
         frames=pd.DataFrame(frame_rows, columns=[
             "frame", "time", "duration", "state", "live", "kickoff", "seconds_remaining",
         ]),
-        ball=pd.DataFrame(ball_rows, columns=["frame", "time", "x", "y", "z", "vx", "vy", "vz"]),
+        ball=pd.DataFrame(ball_rows, columns=["frame", "time", "x", "y", "z", "vx", "vy", "vz", "hit_team"]),
         players=pd.DataFrame(player_rows, columns=[
             "frame", "time", "player", "team", "x", "y", "z", "vx", "vy", "vz", "speed",
-            "qx", "qy", "qz", "qw", "boost", "boosting",
+            "qx", "qy", "qz", "qw", "boost", "boosting", "jumping", "double_jumping", "dodging",
         ]),
         pickups=pd.DataFrame(pickup_rows, columns=["frame", "time", "player", "team", "x", "y", "big"]),
     )

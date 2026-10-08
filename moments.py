@@ -11,21 +11,21 @@ opened straight in "Watch match".
 import numpy as np
 import pandas as pd
 
-from analysis import GROUND_HEIGHT, PITCH_HALF_LENGTH, THIRD_LINE
-from frame_data import GameFrames
+from frame_data import PITCH_HALF_LENGTH, THIRD_LINE, GameFrames
+from touches import find_events, find_runs as _runs
 
 TEAM_NAMES = {0: "Blue", 1: "Orange"}
 MAX_MOMENTS = 20            # goals are always kept; the rest are the most severe
 GOAL_LOOKBACK = 3.0         # seconds before a goal that the defence is checked
 NOBODY_BACK_SECONDS = 1.5   # whole team ahead of a ball that is in its own half
 DOUBLE_COMMIT_SECONDS = 0.5
-DOUBLE_COMMIT_DISTANCE = 700
-CLOSING_SPEED = 300         # uu/s towards the ball counts as "going for it"
 NO_BOOST_SECONDS = 4.0
 LOW_BOOST = 15
 FAR_FROM_NET = 3500
 AIRBORNE = 300
 GOAL_FOLLOW_SECONDS = 6.0   # a goal this soon after a mistake is blamed on it
+AERIAL_GOAL_SECONDS = 3.0   # an aerial touch this soon before its owner's goal is an "aerial goal"
+SAVE_BALL_SPEED = 1000      # a clear of a ball heading for your goal at least this fast is a "big clear"
 MERGE_GAP = 4.0             # same mistake repeating within this many seconds is one moment
 
 
@@ -33,49 +33,6 @@ def fmt_clock(seconds):
     if seconds is None:
         return ""
     return f"{int(seconds) // 60}:{int(seconds) % 60:02d}"
-
-
-def _live_table(game: GameFrames):
-    """One row per player per live frame, with ball-relative columns. Orange is flipped so
-    that for everyone negative own_y = their own half (same convention as analysis.py)."""
-    live = game.frames.loc[game.frames.live, ["frame", "duration", "kickoff"]]
-    ball = game.ball[["frame", "x", "y", "z"]].rename(columns={"x": "bx", "y": "by", "z": "bz"})
-    p = game.players.merge(live, on="frame").merge(ball, on="frame", how="inner")
-    if p.empty:
-        return p
-    flip = np.where(p.team == 1, -1, 1)
-    p["own_y"] = p.y * flip
-    p["ball_own_y"] = p.by * flip
-    p["ahead"] = p.own_y > p.ball_own_y
-    dx, dy, dz = p.bx - p.x, p.by - p.y, p.bz - p.z
-    p["dist_to_ball"] = np.sqrt(dx ** 2 + dy ** 2 + dz ** 2)
-    closing = (p.vx * dx + p.vy * dy + p.vz * dz) / p.dist_to_ball.replace(0, np.nan)
-    p["committed"] = (p.dist_to_ball < DOUBLE_COMMIT_DISTANCE) & (closing > CLOSING_SPEED)
-    return p.sort_values(["frame", "player"], ignore_index=True)
-
-
-def _runs(frames: pd.DataFrame, mask, min_seconds):
-    """Stretches where mask is true on consecutive frames, lasting at least min_seconds.
-
-    frames: one row per frame (columns frame, time, duration), sorted. Returns dicts with
-    start/end replay time, seconds, and the frame range.
-    """
-    m = np.asarray(mask, dtype=bool)
-    if not m.any():
-        return []
-    frame = frames.frame.to_numpy()
-    new = np.r_[True, (np.diff(frame) != 1) | (m[1:] != m[:-1])]
-    group = np.cumsum(new)
-    runs = []
-    for _, g in frames[m].groupby(group[m]):
-        seconds = float(g.duration.sum())
-        if seconds >= min_seconds:
-            last = g.iloc[-1]
-            runs.append({
-                "start": float(g.time.iloc[0]), "end": float(last.time + last.duration),
-                "seconds": seconds, "frame": int(g.frame.iloc[0]), "last_frame": int(last.frame),
-            })
-    return runs
 
 
 def _merge_close(moments):
@@ -98,7 +55,8 @@ def detect_moments(game: GameFrames, summary) -> list[dict]:
         players, title, detail, seconds, severity, flags
     flags (goals only) maps each defender's name to what was wrong with their position.
     """
-    p = _live_table(game)
+    ev = find_events(game)
+    p = ev.p
     if p.empty:
         return []
     frames = game.frames
@@ -116,12 +74,14 @@ def detect_moments(game: GameFrames, summary) -> list[dict]:
 
     # ---- goals, with the conceding team's positions a few seconds earlier ----
     goal_times = []
+    scorers = []
     score = [0, 0]
     for goal in summary.goals:
         if not 0 <= goal.frame < len(frames):
             continue
         t_goal = float(frames.time.iloc[goal.frame])
         goal_times.append((t_goal, goal.team))
+        scorers.append((t_goal, goal.scorer))
         score[goal.team] += 1
         conceding = 1 - goal.team
         before = p[(p.team == conceding) & (p.time >= t_goal - GOAL_LOOKBACK) & (p.time <= t_goal)]
@@ -204,6 +164,40 @@ def detect_moments(game: GameFrames, summary) -> list[dict]:
             add("no_boost", "Out of boost", run["start"], run["frame"], d.team.iloc[0], [name],
                 f"{name} had no boost for {run['seconds']:.1f}s.", run["seconds"], run["seconds"] / 2)
 
+    # ---- 50/50s lost and last men beaten shortly before a goal ----
+    for f in ev.fifty:
+        if f["winner"] is None:
+            continue
+        loser = 1 - f["winner"]
+        late = goal_after(f["time"], loser)
+        if late is None:
+            continue
+        who = [n for n, team in zip(f["players"], f["teams"]) if team == loser]
+        winners = [n for n, team in zip(f["players"], f["teams"]) if team != loser]
+        add("lost_5050", "Lost 50/50", f["time"], f["frame"], loser, who,
+            f"{' and '.join(who)} lost a 50/50 against {' and '.join(winners)}. "
+            f"{TEAM_NAMES[1 - loser]} scored {late:.0f}s later.", severity=10 + max(0.0, 6 - late))
+
+    for b in ev.beaten:
+        late = goal_after(b["time"], b["team"])
+        if b["last_man"] and late is not None:
+            add("last_man_beaten", "Last man beaten", b["time"], b["frame"], b["team"], [b["player"]],
+                f"{b['player']} was the last man back, went for the ball and was beaten by {b['toucher']}. "
+                f"{TEAM_NAMES[1 - b['team']]} scored {late:.0f}s later.", severity=12 + max(0.0, 6 - late))
+
+    # ---- good plays, so there is something positive to point at ----
+    air = ev.touches[ev.touches.aerial | ev.touches.high_aerial]
+    for _, t in air.iterrows():
+        if any(scorer == t.player and 0 <= t_goal - t.time <= AERIAL_GOAL_SECONDS for t_goal, scorer in scorers):
+            add("aerial_goal", "Aerial goal", t.time, t.frame, t.team, [t.player],
+                f"{t.player} hit the ball in the air ({t.car_z:.0f}uu up) and it ended in a goal.", severity=8)
+    saves = ev.touches[(ev.touches.to_opp_before < -SAVE_BALL_SPEED) & (ev.touches.to_opp_after > 0)
+                       & (ev.touches.ball_own_y < -THIRD_LINE)]
+    for _, t in saves.iterrows():
+        add("clear", "Big clear", t.time, t.frame, t.team, [t.player],
+            f"{t.player} cleared a ball coming at {abs(t.to_opp_before):.0f}uu/s towards their own goal.",
+            severity=abs(t.to_opp_before) / 500)
+
     # ---- keep the goals and the most severe mistakes, oldest first ----
     goals = [m for m in moments if m["type"] == "goal"]
     others = sorted(_merge_close([m for m in moments if m["type"] != "goal"]),
@@ -251,11 +245,32 @@ def insights(summary, players, moments, me_name, usual=None) -> list[dict]:
     compare("pct_behind_ball", "Time behind the ball", True)
     compare("pct_zero_boost", "Time on empty boost", False)
     compare("pct_supersonic", "Time supersonic", True)
+    compare("fifty_win_pct", "50/50 win rate", True, margin=20)
+    compare("pct_possession", "Possession (last to touch the ball)", True, margin=5)
+    compare("pct_shadowing", "Time shadowing as the defender", True, margin=3)
+    compare("times_beaten", "Times beaten after committing to the ball", False, unit="", margin=3)
+    compare("aerial_touches", "Aerial touches", True, unit="", margin=3)
 
     if me["pct_zero_boost"] > 15 and not any("empty boost" in i["text"] for i in out):
         add("bad", f"You spent {me['pct_zero_boost']:.0f}% of the game on 0 boost.")
     if me["stolen_big_pads"] >= 2:
         add("good", f"You stole {me['stolen_big_pads']:.0f} big boost pads from the opponent's half.")
+
+    if me.get("fifty_fifties") and me["fifty_fifties"] >= 3 and me.get("fifty_win_pct") is not None:
+        add("good" if me["fifty_win_pct"] >= 50 else "bad",
+            f"You won {me['fifty_win_pct']:.0f}% of your {me['fifty_fifties']:.0f} 50/50s.")
+    lost = [m for m in moments if m["type"] == "lost_5050" and me_name in m["players"]]
+    if lost:
+        add("bad", f"You lost {len(lost)} 50/50(s) that led to a goal for the opponent.")
+    beaten = [m for m in moments if m["type"] == "last_man_beaten" and me_name in m["players"]]
+    if beaten:
+        add("bad", f"You were beaten as last man {len(beaten)} time(s) just before a goal.")
+    aerial = [m for m in moments if m["type"] == "aerial_goal" and me_name in m["players"]]
+    if aerial:
+        add("good", f"{len(aerial)} of your goals came from an aerial touch.")
+    clears = [m for m in moments if m["type"] == "clear" and me_name in m["players"]]
+    if clears:
+        add("good", f"You made {len(clears)} big clear(s) of balls heading for your goal.")
 
     back = [m for m in moments if m["type"] == "nobody_back" and m["team"] == my_team]
     if back:

@@ -251,8 +251,11 @@ select {
   border-bottom: 1px solid var(--hairline);
   flex-shrink: 0;
   margin-top: 10px;
+  overflow-x: auto;
 }
+.sub-page > .card { overflow-x: auto; }
 .sub-tab {
+  white-space: nowrap;
   border: none;
   background: none;
   padding: 9px 12px;
@@ -480,6 +483,7 @@ table.stat-table tr:hover td { background: var(--surface-sunken); }
 .coach-moment { padding: 12px 16px; border-left: 3px solid var(--hairline-strong); }
 .coach-moment.mine { border-left-color: var(--ink); }
 .coach-moment.goal { border-left-color: var(--blue); }
+.coach-moment.aerial_goal, .coach-moment.clear { border-left-style: dashed; }
 .coach-moment-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .coach-moment-title { font-weight: 700; font-size: 13.5px; }
 .coach-clock { display: inline-block; min-width: 42px; margin-right: 10px; color: var(--ink-muted); font-weight: 600; font-variant-numeric: tabular-nums; }

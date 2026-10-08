@@ -3,14 +3,11 @@
 import numpy as np
 import pandas as pd
 
-from frame_data import GameFrames
+from frame_data import GOAL_HEIGHT, GROUND_HEIGHT, PITCH_HALF_LENGTH, THIRD_LINE, GameFrames
+from touches import skill_stats
 
 SUPERSONIC_SPEED = 2200
 BOOST_SPEED = 1410        # max speed without boosting
-GROUND_HEIGHT = 20        # a car resting on the floor sits at z ~17
-GOAL_HEIGHT = 642         # above crossbar height counts as "high air"
-PITCH_HALF_LENGTH = 5120
-THIRD_LINE = PITCH_HALF_LENGTH / 3   # thirds split at y = +/-1707
 BOOST_USE_PER_SEC = 100 / 3          # % of a full tank used per second of boosting
 SMALL_PAD_BOOST = 12
 BIG_PAD_BOOST = 100
@@ -44,6 +41,33 @@ STAT_GROUPS = {
         ("stolen_big_pads", "Stolen big", "{:.0f}"),
         ("pct_zero_boost", "% at 0", "{:.1f}"),
         ("pct_full_boost", "% at 100", "{:.1f}"),
+    ],
+    "Challenges": [
+        ("touches", "Touches", "{:.0f}"),
+        ("touches_per_min", "Touches/min", "{:.1f}"),
+        ("pct_possession", "% Possession", "{:.1f}"),
+        ("fifty_fifties", "50/50s", "{:.0f}"),
+        ("fifty_win_pct", "50/50 win %", "{:.0f}"),
+        ("times_beaten", "Times beaten", "{:.0f}"),
+    ],
+    "Mechanics": [
+        ("aerial_touches", "Aerial touches", "{:.0f}"),
+        ("high_aerials", "High aerials", "{:.0f}"),
+        ("wall_touches", "Wall touches", "{:.0f}"),
+        ("dodge_touches", "Flip touches", "{:.0f}"),
+        ("hardest_hit", "Hardest hit", "{:.0f}"),
+        ("dribbles", "Dribbles", "{:.0f}"),
+        ("dribble_seconds", "Dribble secs", "{:.1f}"),
+        ("dodges", "Flips", "{:.0f}"),
+        ("double_jumps", "Double jumps", "{:.0f}"),
+        ("half_flips", "Half-flips", "{:.0f}"),
+        ("wave_dashes", "Wave dashes", "{:.0f}"),
+    ],
+    "Defence": [
+        ("clears", "Clears", "{:.0f}"),
+        ("pct_shadowing", "% Shadowing", "{:.1f}"),
+        ("pct_last_man", "% Last man", "{:.1f}"),
+        ("last_man_beaten", "Beaten as last man", "{:.0f}"),
     ],
 }
 
@@ -113,6 +137,10 @@ def player_stats(game: GameFrames) -> pd.DataFrame:
             "pct_zero_boost": _pct(g.boost < 1, w),
             "pct_full_boost": _pct(g.boost > 99, w),
         }
+
+    for name, extra in skill_stats(game).items():
+        if name in rows:
+            rows[name].update(extra)
 
     return pd.DataFrame.from_dict(rows, orient="index").sort_values(["team", "avg_speed"], ascending=[True, False])
 

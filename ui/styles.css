@@ -137,6 +137,35 @@ select {
   -webkit-app-region: no-drag;
 }
 
+/* ---------- updates ---------- */
+
+.hidden { display: none !important; }
+.btn-small { padding: 4px 10px; font-size: 11.5px; }
+.btn-small.primary { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 10px 22px;
+  background: var(--ink);
+  color: var(--surface);
+  flex-shrink: 0;
+}
+.update-banner.error { background: #7a1f17; }
+.update-text { flex: 1; min-width: 240px; }
+.update-title { font-weight: 700; font-size: 13px; }
+.update-notes { font-size: 12px; color: rgba(255, 255, 255, .72); white-space: pre-wrap; max-height: 64px; overflow-y: auto; margin-top: 2px; }
+.update-notes:empty { display: none; }
+.update-progress { width: 220px; height: 6px; border-radius: 4px; background: rgba(255, 255, 255, .22); overflow: hidden; }
+.update-bar-fill { height: 100%; width: 0; background: #fff; transition: width .2s ease; }
+.update-actions { display: flex; gap: 8px; }
+.update-banner .btn { background: rgba(255, 255, 255, .1); color: #fff; border-color: rgba(255, 255, 255, .28); box-shadow: none; }
+.update-banner .btn:hover { background: rgba(255, 255, 255, .2); }
+.update-banner .btn-primary { background: #fff; color: var(--ink); border-color: #fff; }
+.update-banner .btn-primary:hover { background: #e8e8e4; }
+
 /* ---------- views (home / match / progress) ---------- */
 
 .view { flex: 1; min-height: 0; display: none; flex-direction: column; }

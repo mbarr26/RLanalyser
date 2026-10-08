@@ -18,6 +18,7 @@ import pandas as pd
 import webview
 
 import coach
+import updater
 from analysis import STAT_GROUPS
 from frame_data import load_game_frames
 from paths import bundled, user_data
@@ -64,6 +65,10 @@ def _num(value):
     return None if pd.isna(value) else float(value)
 
 
+def update_source():
+    return updater.update_source(load_config().get("update_url"))
+
+
 def coach_tier():
     tier = load_config().get("coach_tier")
     return tier if tier in coach.TIERS else coach.DEFAULT_TIER
@@ -86,6 +91,12 @@ COACH_FACTS = {}                      # path -> coach.analyse_for_coach result, 
 COACH_CHATS = {}                      # path -> coach.CoachChat
 COACH_BUSY = set()                    # ("report" | "chat", path) currently running
 DOWNLOAD_CANCEL = None                # threading.Event while a model download runs
+
+# Updates (see updater.py)
+UPDATE_INFO = None                    # the newer release found by the last check
+UPDATE_CHECKING = False
+UPDATE_CANCEL = None                  # threading.Event while an update downloads
+PENDING_INSTALLER = None              # a verified installer to start once the app has closed
 
 
 def effective_me():
@@ -214,6 +225,7 @@ class Api:
     def get_meta(self):
         return {
             "version": APP_VERSION,
+            "updatesConfigured": bool(update_source()),
             "config": {"replayDir": str(REPLAY_DIR) if REPLAY_DIR else None, "me": CHOSEN_ME},
             "statGroups": {group: [[c, h, f] for c, h, f in stats] for group, stats in STAT_GROUPS.items()},
             "progressStats": [[c, h, f] for c, h, f in PROGRESS_STATS],
@@ -409,9 +421,81 @@ class Api:
         COACH_CHATS.pop(Path(path), None)
         return None
 
+    # ---------- updates ----------
+
+    def check_for_update(self):
+        """Look for a newer release in the background; the answer arrives as onUpdate."""
+        global UPDATE_CHECKING
+        source = update_source()
+        if not source:
+            push("onUpdate", {"state": "unconfigured"})
+            return None
+        if UPDATE_CHECKING or UPDATE_CANCEL is not None:
+            return None
+        UPDATE_CHECKING = True
+
+        def work():
+            global UPDATE_INFO, UPDATE_CHECKING
+            try:
+                info = updater.check(source)
+                UPDATE_INFO = info
+                push("onUpdate", {"state": "available", "info": asdict(info)} if info
+                     else {"state": "none", "version": APP_VERSION})
+            except updater.UpdateError as e:
+                push("onUpdate", {"state": "error", "error": str(e)})
+            except Exception as e:
+                push("onUpdate", {"state": "error", "error": f"Unexpected error: {e}"})
+            finally:
+                UPDATE_CHECKING = False
+
+        threading.Thread(target=work, daemon=True).start()
+        return None
+
+    def update_install(self, force=False):
+        """Download and verify the update, then close the app so the installer can run.
+
+        Returns {"busy": True} (without doing anything) if an AI task is running and force is
+        false, so the page can ask first. Progress arrives as onUpdateProgress, failures as
+        onUpdateFailed; on success the window closes and main() starts the installer.
+        """
+        global UPDATE_CANCEL
+        info = UPDATE_INFO
+        if info is None or UPDATE_CANCEL is not None:
+            return {"started": False}
+        if COACH_BUSY and not force:
+            return {"busy": True}
+        cancel = UPDATE_CANCEL = threading.Event()
+
+        def work():
+            global UPDATE_CANCEL, PENDING_INSTALLER
+            try:
+                path = updater.download(
+                    info, lambda done, total, phase: push("onUpdateProgress", {"done": done, "total": total, "phase": phase}), cancel)
+            except updater.UpdateCancelled:
+                push("onUpdateFailed", {"cancelled": True})
+            except updater.UpdateError as e:
+                push("onUpdateFailed", {"error": str(e)})
+            except Exception as e:
+                push("onUpdateFailed", {"error": f"Unexpected error: {e}"})
+            else:
+                PENDING_INSTALLER = path
+                push("onUpdateProgress", {"phase": "installing"})
+                WINDOW.destroy()
+            finally:
+                UPDATE_CANCEL = None
+
+        threading.Thread(target=work, daemon=True).start()
+        return {"started": True}
+
+    def update_cancel(self):
+        if UPDATE_CANCEL is not None:
+            UPDATE_CANCEL.set()
+        return None
+
 
 def main():
     global WINDOW
+    updater.cleanup_old()
     WINDOW = webview.create_window(
         "RL Analyser",
         str(UI_DIR / "index.html"),
@@ -423,6 +507,12 @@ def main():
     )
     webview.start()
     coach.stop_server()   # the AI engine is a separate process; don't leave it running
+    if PENDING_INSTALLER is not None:
+        # An update was downloaded and checked: start its installer now that nothing of ours is running
+        try:
+            updater.launch_installer(PENDING_INSTALLER)
+        except updater.UpdateError as e:
+            user_data("update-error.txt").write_text(str(e), encoding="utf-8")
 
 
 if __name__ == "__main__":

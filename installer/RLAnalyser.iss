@@ -6,8 +6,14 @@
   #define AppVersion "1.0.0"
 #endif
 
+; The app's identity for upgrades (keep it the same for every release). Tests override it with
+; /DAppIdGuid=... so a test install can never replace or unregister a real one.
+#ifndef AppIdGuid
+  #define AppIdGuid "{{6E1B6A52-3F0C-4C9B-9B5E-7A3D2C1F8E40}"
+#endif
+
 [Setup]
-AppId={{6E1B6A52-3F0C-4C9B-9B5E-7A3D2C1F8E40}
+AppId={#AppIdGuid}
 AppName=RL Analyser
 AppVersion={#AppVersion}
 AppPublisher=RL Analyser
@@ -22,6 +28,7 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 DisableProgramGroupPage=yes
+RestartApplications=no
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
@@ -36,4 +43,7 @@ Name: "{autoprograms}\RL Analyser"; Filename: "{app}\RL Analyser.exe"
 Name: "{autodesktop}\RL Analyser"; Filename: "{app}\RL Analyser.exe"; Tasks: desktopicon
 
 [Run]
+; Normal install: a "Launch RL Analyser" checkbox on the last page
 Filename: "{app}\RL Analyser.exe"; Description: "Launch RL Analyser"; Flags: nowait postinstall skipifsilent
+; In-app update (the app starts Setup with /SILENT): relaunch the new version automatically
+Filename: "{app}\RL Analyser.exe"; Flags: nowait; Check: WizardSilent

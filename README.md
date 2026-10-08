@@ -70,6 +70,12 @@ design with layered cards and soft shadows. It ships as a Windows installer (see
   rolling average (line). Hover a dot for that game's details.
 - **Games list** – your games with the key stats; double-click one to open its match screen.
 
+### Updates
+The title bar has a **Check for updates** button, and the app checks quietly a few seconds after
+it starts. When a newer version has been released, a banner shows what's new with **Install &
+restart**: the app downloads the installer, checks it, closes, installs and reopens by itself.
+Nothing is installed without that click. See [Updating](#updating).
+
 ### How "you" are identified
 Players are tracked by account ID (Epic account ID, or PlayStation/Xbox/Switch/Steam ID),
 not by name, so stats follow you across name changes. Until you press **This is me**,
@@ -126,6 +132,9 @@ directions:
 | `coach.py` | The AI layer: model download, llama.cpp server management, the match "dossier" given to the model, report generation, and chat. Also a CLI: `python coach.py match.replay --me "Name"`. |
 | `version.py` | `APP_VERSION`: shown in the title bar and used to name the installer. |
 | `rl_analyser.spec` | PyInstaller recipe: a windowed one-folder build with `ui/` and `tools/` bundled. |
+| `updater.py` | In-app updates: reads the release manifest, compares versions, downloads and SHA-256-checks the installer, starts it. No UI. |
+| `ui/update.js` | The title-bar button and update banner (progress, release notes, errors). |
+| `release.ps1` | Makes a release: builds the installer and writes `dist\release\latest.json` next to it. |
 | `build.ps1` | One command that builds the app and the installer (see below). |
 | `installer/RLAnalyser.iss` | Inno Setup script for the per-user installer (Start menu / desktop shortcuts, uninstaller). |
 | `assets/` | `icon.ico` (app icon) and `make_icon.py`, which generates it. |
@@ -168,7 +177,10 @@ goal; the pitch is x ∈ [−4096, 4096], y ∈ [−5120, 5120].
   key moments are instant either way. The Lite model sometimes pads its strengths or misreads a
   stat; Standard is better but needs a stronger PC.
 - The installer is **unsigned**, so Windows SmartScreen shows "Unknown publisher" the first time
-  it is run (More info → Run anyway) until it is code-signed.
+  it is run (More info → Run anyway) until it is code-signed. Updates started from inside the app
+  don't show it (the app downloads the file itself).
+- Versions before 1.1.0 have no updater, so install 1.1.0 by hand once; later versions update
+  themselves.
 
 ## AI models
 
@@ -176,7 +188,8 @@ goal; the pitch is x ∈ [−4096, 4096], y ∈ [−5120, 5120].
   `coach.py`. To change or upgrade one, edit that entry (repo, file, size, SHA-256) and bump
   `COACH_VERSION` so saved reports are rewritten.
 - The model is downloaded by each user on first use, so the installer itself stays small (~47 MB).
-- **Still to do for a public release:** code-sign the installer and add an auto-updater.
+- **Still to do for a public release:** code-sign the installer, and sign the update manifest (see
+  [Updating](#updating)).
 
 ## Requirements
 
@@ -191,6 +204,51 @@ goal; the pitch is x ∈ [−4096, 4096], y ∈ [−5120, 5120].
 ```
 python rl_analyser.py
 ```
+
+## Updating
+
+**Releasing a new version** (you):
+1. Raise `APP_VERSION` in `version.py` (e.g. `1.2.0`).
+2. `powershell -ExecutionPolicy Bypass -File release.ps1 -Notes "What's new"` (or `-NotesFile notes.txt`).
+   This builds the app and installer and writes two files to `dist\release\`:
+   `RLAnalyser-Setup-<version>.exe` and `latest.json`. Add `-BaseUrl https://example.com/rla/` to
+   write an absolute download address into `latest.json`.
+3. Upload both files to the place the app looks (below). Every installed copy offers the update
+   the next time it checks.
+
+**Where the app looks** – the address of `latest.json`; the first of these that is set wins:
+1. the `RLA_UPDATE_URL` environment variable (for testing),
+2. `"update_url"` in `config.json` (`%LOCALAPPDATA%\RLAnalyser\config.json` once installed),
+3. `UPDATE_URL` in `version.py` (empty for now; put your website address here once it exists, e.g.
+   `https://example.com/rla/latest.json`, and ship that in a release).
+
+It can be an `https://` address **or a folder / network path / `file://` URL**, so updates work
+before there is a website: point it at a shared folder that holds the two files. Plain `http://`
+is refused (except to this PC, for testing). With nothing set, the button reads "Updates not set up".
+
+**`latest.json`**:
+```json
+{ "version": "1.2.0", "url": "RLAnalyser-Setup-1.2.0.exe", "sha256": "<64 hex characters>",
+  "size": 49123456, "notes": "What's new, as plain text.", "released": "2026-10-20" }
+```
+`url` is either a full `https://` address or relative to `latest.json`'s own location.
+`release.ps1` writes this file for you, including the checksum.
+
+**What the app does** – checks the manifest (at start-up and on the button), offers the update only if
+`version` is newer than the running one, then on **Install & restart** downloads the installer to
+`%LOCALAPPDATA%\RLAnalyser\updates`, refuses it unless its SHA-256 (and size) match the manifest, closes
+the app and the AI engine, runs the installer with `/SILENT` (a small progress window) and the installer
+reopens the app. Settings, cache and AI models are not touched. If an AI analysis is running the app asks first.
+
+**Security:** HTTPS plus the SHA-256 check protects against corrupted downloads and tampering on the
+network. It does **not** protect against someone who takes over the website that hosts `latest.json`,
+because they could publish a manifest for their own installer. The next steps for a wide release are
+code-signing the installer (and having the app verify the publisher) and signing `latest.json`.
+
+**Testing an update without touching a real install:** build test installers with a different app id
+(`ISCC /DAppIdGuid={{<your own guid>} ...`, see `installer/RLAnalyser.iss`) and install them to a scratch
+folder with `/DIR=...`. The installer's app id is what makes a new version replace the old one in place, so
+never reuse the real one for tests.
 
 ## Building the installer
 

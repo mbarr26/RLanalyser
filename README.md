@@ -234,8 +234,10 @@ trend chart's data colour is the categorical blue, not the violet.
    This builds the app and installer and writes two files to `dist\release\`:
    `RLAnalyser-Setup-<version>.exe` and `latest.json`. Add `-BaseUrl https://example.com/rla/` to
    write an absolute download address into `latest.json`.
-3. Upload both files to the place the app looks (below). Every installed copy offers the update
-   the next time it checks.
+3. Upload both files to the place the app looks (below), or let the script do it for a folder:
+   add `-PublishTo <folder>` (it copies the installer first and `latest.json` last, so an app never reads a
+   manifest whose installer isn't there yet), and `-SkipBuild` to re-publish what is already in `dist\`
+   without rebuilding. Every installed copy offers the update the next time it checks.
 
 **Where the app looks** – the address of `latest.json`; the first of these that is set wins:
 1. the `RLA_UPDATE_URL` environment variable (for testing),

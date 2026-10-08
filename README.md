@@ -3,8 +3,8 @@
 A Windows desktop app for your Rocket League replays. The home page shows how your
 stats are trending with every replay as a tile; opening a replay plays the whole match
 in 2D while a local AI coach analyses it and answers your questions. The window is a
-native app (via pywebview) whose UI is an HTML/CSS/JS page — a clean, black-and-white
-design with layered cards and soft shadows. It ships as a Windows installer (see
+native app (via pywebview) whose UI is an HTML/CSS/JS page — a dark design: near-black
+layered surfaces, one electric-violet accent and soft glows. It ships as a Windows installer (see
 [Building the installer](#building-the-installer)).
 
 ## Features
@@ -116,7 +116,7 @@ directions:
 |------|---------|
 | `rl_analyser.py` | Native window + `Api`: hosts the page, runs the background scan/analysis threads, and exposes the methods the page calls into. |
 | `ui/index.html` | Page structure: the Home, Match (replay + tabs + AI panel) and full Progress views. |
-| `ui/styles.css` | The design system — monochrome palette, shadows, cards, typography. |
+| `ui/styles.css` | The dark design system: colour tokens at the top, then every component, plus the motion. See [Design](#design). |
 | `ui/app.js` | Page controller: view switching, home strip and replay tiles, match header/tables, the embedded replay, the progress page; talks to `pywebview.api` and handles the pushes from Python (`window.app.*`). |
 | `ui/coach.js` | The AI panel and the Findings / Key moments tabs: model download, the AI report (started automatically), and the chat. |
 | `ui/chart.js` | Canvas-drawn trend chart (per-game dots + rolling average, with hover). |
@@ -204,6 +204,27 @@ goal; the pitch is x ∈ [−4096, 4096], y ∈ [−5120, 5120].
 ```
 python rl_analyser.py
 ```
+
+## Design
+
+The whole UI is dark (near-black page, slightly lighter cards) with **one accent, electric violet**,
+used for chrome only: buttons, selected tabs/cards/rows, focus rings, the AI panel and glows. **Team
+blue and orange are reserved for data** (which team), so the accent is never either of them, and the
+trend chart's data colour is the categorical blue, not the violet.
+
+- **Tokens** live at the top of `ui/styles.css` (`--paper`, `--surface`, `--surface-2/3`, `--ink*`,
+  `--accent*`, `--blue`, `--orange`...). Change a value there and the whole UI follows.
+- **Canvas colours** can't read CSS variables, so the two canvases keep matching constants:
+  `ui/chart.js` (the constants at the top: ink, grid, surface, data blue, tooltip) and `ui/pitch.js`
+  (`TEAM_COLOURS`, `TEAM_LIGHT`, `TEAM_GLOW`, pitch/pad colours). Retune those together with the CSS.
+- **Contrast:** every text token is at least 4.5:1 on all four surfaces, the accent fill takes white text at
+  4.8:1 or better, and the team pair passes the dataviz skill's colour-blind and contrast checks on the dark
+  surface (the dark chart steps come from that skill).
+- **Motion** (tile entrance, count-up numbers, the AI orb, typing dots, view fades) is switched off under the
+  system's "reduce motion" setting. Glows are static CSS, so they cost nothing while the app runs.
+- **Native bits:** `color-scheme: dark` (dropdowns, scrollbars, sliders), the window background (no white flash
+  at start-up) and, on Windows 10/11, a dark title bar (`dark_title_bar` in `rl_analyser.py`; if it isn't
+  supported the normal title bar is kept).
 
 ## Updating
 

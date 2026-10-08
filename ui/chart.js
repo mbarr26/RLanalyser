@@ -1,15 +1,21 @@
 // Trend chart: one stat per game (dots) with a rolling average (line) and a hover tooltip.
-// Canvas port of the app's original Tkinter chart. Tokens match styles.css / analysis chrome
-// so the chart reads as part of the same system (see dataviz skill's chart-chrome tokens).
+// Canvas port of the app's original Tkinter chart. The colours below are the dark chart chrome
+// from the dataviz skill and match styles.css, so the chart reads as part of the same system.
+// The data colour is the categorical blue (not the violet UI accent): colour in a chart means data.
 
 const CHART = (() => {
   const ROLLING_GAMES = 5;
-  const INK = "#0b0b0b";
-  const INK_SECONDARY = "#52514e";
-  const GRID = "#e1e0d9";
-  const SURFACE = "#ffffff";
-  const GAME_DOT = "#86b6ef";     // sequential step 250 - de-emphasised
-  const AVERAGE_LINE = "#2a78d6"; // categorical slot 1 - the accent
+  const INK = "#f4f4f7";
+  const INK_SECONDARY = "#b4b4c0";
+  const GRID = "#26262d";
+  const SURFACE = "#0d0d11";        // the card the canvas sits on
+  const GAME_DOT = "#3987e5";       // categorical slot 1, dark-mode step
+  const GAME_DOT_ALPHA = 0.6;       // de-emphasised against the average line
+  const AVERAGE_LINE = "#3987e5";
+  const AVERAGE_GLOW = "rgba(57, 135, 229, 0.75)";
+  const AREA_TOP = "rgba(57, 135, 229, 0.30)";
+  const TOOLTIP_BG = "#15151b";
+  const TOOLTIP_BORDER = "rgba(255, 255, 255, 0.16)";
   const PAD_LEFT = 54, PAD_RIGHT = 20, PAD_TOP = 40, PAD_BOTTOM = 32;
 
   function niceTicks(lo, hi, count = 5) {
@@ -126,20 +132,7 @@ const CHART = (() => {
         ctx.fillText(last, right, bottom + 18);
       }
 
-      // Dots (each game)
-      for (const [i, v] of points) {
-        const x = xOf(i), y = yOf(v);
-        ctx.beginPath();
-        ctx.arc(x, y, 4.5, 0, Math.PI * 2);
-        ctx.fillStyle = GAME_DOT;
-        ctx.fill();
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = SURFACE;
-        ctx.stroke();
-        this.dots.push({ x, y, i });
-      }
-
-      // Rolling average line
+      // Rolling average (computed first so its area can sit under the dots)
       const average = [];
       let window_ = [];
       for (const [i, v] of points) {
@@ -147,14 +140,52 @@ const CHART = (() => {
         average.push([xOf(i), yOf(window_.reduce((a, b) => a + b, 0) / window_.length)]);
       }
       if (average.length > 1) {
+        const fill = ctx.createLinearGradient(0, top, 0, bottom);
+        fill.addColorStop(0, AREA_TOP);
+        fill.addColorStop(1, "rgba(57, 135, 229, 0)");
+        ctx.beginPath();
+        ctx.moveTo(average[0][0], bottom);
+        for (const [x, y] of average) ctx.lineTo(x, y);
+        ctx.lineTo(average[average.length - 1][0], bottom);
+        ctx.closePath();
+        ctx.fillStyle = fill;
+        ctx.fill();
+      }
+
+      // Dots (each game)
+      for (const [i, v] of points) {
+        const x = xOf(i), y = yOf(v);
+        const hot = this.hoverIndex === i;
+        ctx.save();
+        if (hot) { ctx.shadowColor = AVERAGE_GLOW; ctx.shadowBlur = 14; }
+        ctx.beginPath();
+        ctx.arc(x, y, hot ? 6 : 4.5, 0, Math.PI * 2);
+        ctx.globalAlpha = hot ? 1 : GAME_DOT_ALPHA;
+        ctx.fillStyle = GAME_DOT;
+        ctx.fill();
+        ctx.restore();
+        ctx.beginPath();
+        ctx.arc(x, y, hot ? 6 : 4.5, 0, Math.PI * 2);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = hot ? INK : SURFACE;
+        ctx.stroke();
+        this.dots.push({ x, y, i });
+      }
+
+      // Rolling average line
+      if (average.length > 1) {
+        ctx.save();
         ctx.beginPath();
         ctx.moveTo(average[0][0], average[0][1]);
         for (const [x, y] of average.slice(1)) ctx.lineTo(x, y);
         ctx.strokeStyle = AVERAGE_LINE;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2.25;
         ctx.lineJoin = "round";
         ctx.lineCap = "round";
+        ctx.shadowColor = AVERAGE_GLOW;
+        ctx.shadowBlur = 10;
         ctx.stroke();
+        ctx.restore();
 
         const [ex, ey] = average[average.length - 1];
         const latest = window_.reduce((a, b) => a + b, 0) / window_.length;
@@ -196,12 +227,18 @@ const CHART = (() => {
       ctx.beginPath();
       ctx.arc(x, y, 4, 0, Math.PI * 2);
       ctx.fillStyle = GAME_DOT;
+      ctx.globalAlpha = GAME_DOT_ALPHA;
       ctx.fill();
+      ctx.globalAlpha = 1;
     }
 
     hideHover() {
       const tip = this._tip;
       if (tip) tip.style.display = "none";
+      if (this.hoverIndex !== null && this.hoverIndex !== undefined) {
+        this.hoverIndex = null;
+        this.draw();
+      }
     }
 
     onMotion(e) {
@@ -214,14 +251,18 @@ const CHART = (() => {
         if (dist < bestDist) { bestDist = dist; best = d; }
       }
       if (!best || bestDist > 16) { this.hideHover(); return; }
+      if (this.hoverIndex !== best.i) {
+        this.hoverIndex = best.i;
+        this.draw();
+      }
       this.showHover(best, rect);
     }
 
     showHover(dot, rect) {
       if (!this._tip) {
         const tip = document.createElement("div");
-        tip.style.cssText = "position:fixed;pointer-events:none;background:#fff;border:1px solid #e1e0d9;" +
-          "border-radius:6px;padding:6px 9px;font-size:11.5px;color:#0b0b0b;box-shadow:0 6px 16px -4px rgba(11,11,11,.18);" +
+        tip.style.cssText = `position:fixed;pointer-events:none;background:${TOOLTIP_BG};border:1px solid ${TOOLTIP_BORDER};` +
+          `border-radius:8px;padding:7px 10px;font-size:11.5px;color:${INK};box-shadow:0 12px 32px -8px rgba(0,0,0,.85),0 0 0 1px rgba(124,58,237,.18);` +
           "white-space:pre;z-index:100;line-height:1.5;";
         document.body.appendChild(tip);
         this._tip = tip;

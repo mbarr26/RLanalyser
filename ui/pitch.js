@@ -9,10 +9,14 @@ const PITCH = (() => {
   const BALL_TRAIL_SECONDS = 1.5, GOAL_REPLAY_KEEP = 2.0;
   const BIG_PADS = [[-3584, 0], [3584, 0], [-3072, 4096], [3072, 4096], [-3072, -4096], [3072, -4096]];
 
-  const TEAM_COLOURS = { 0: "#2a78d6", 1: "#eb6834" };
-  const TEAM_LIGHT = { 0: "#a9c9f2", 1: "#f3bd98" };
-  const PITCH_BG = "#111110";
-  const PITCH_LINE = "rgba(255,255,255,0.34)";
+  // Dark-mode team colours (the dataviz skill's dark steps) and their light tints for text. These
+  // match --blue/--orange in styles.css; the viewer paints on canvas so it carries its own copy.
+  const TEAM_COLOURS = { 0: "#3987e5", 1: "#d95926" };
+  const TEAM_LIGHT = { 0: "#7db4f2", 1: "#f09a73" };
+  const TEAM_GLOW = { 0: "rgba(57,135,229,0.85)", 1: "rgba(217,89,38,0.85)" };
+  const PITCH_CENTRE = "#181824", PITCH_EDGE = "#0a0a10";
+  const PITCH_LINE = "rgba(255,255,255,0.28)";
+  const PAD_GLOW = "rgba(167,139,250,0.95)";
   const SPEEDS = ["0.25x", "0.5x", "1x", "2x", "4x", "8x"];
   const FRAME_MS = 16;
 
@@ -157,7 +161,7 @@ const PITCH = (() => {
       const order = [...this.track.players].sort((a, b) => a.team - b.team);
       for (const player of order) {
         const row = document.createElement("div");
-        row.className = "side-row";
+        row.className = `side-row t${player.team}`;
         row.innerHTML = `
           <div class="side-name" style="color:${TEAM_LIGHT[player.team]}">${escapeHtml(player.name)}</div>
           <div class="side-bar"><div class="side-bar-fill"></div></div>
@@ -188,8 +192,6 @@ const PITCH = (() => {
       this.layout();
       const c = this.ctx;
       c.clearRect(0, 0, this.w, this.h);
-      c.fillStyle = "#0a0a0a";
-      c.fillRect(0, 0, this.w, this.h);
 
       // Pitch outline (octagon)
       const outline = [
@@ -204,7 +206,10 @@ const PITCH = (() => {
         i === 0 ? c.moveTo(px, py) : c.lineTo(px, py);
       });
       c.closePath();
-      c.fillStyle = PITCH_BG;
+      const field = c.createRadialGradient(this.cx, this.cy, 0, this.cx, this.cy, Math.max(this.w, this.h) * 0.55);
+      field.addColorStop(0, PITCH_CENTRE);
+      field.addColorStop(1, PITCH_EDGE);
+      c.fillStyle = field;
       c.fill();
       c.strokeStyle = PITCH_LINE;
       c.lineWidth = 2;
@@ -214,11 +219,15 @@ const PITCH = (() => {
       for (const [team, sign] of [[0, -1], [1, 1]]) {
         const [x0, y0] = this.toCanvas(GOAL_HALF_WIDTH, sign * HALF_LENGTH);
         const [x1, y1] = this.toCanvas(-GOAL_HALF_WIDTH, sign * (HALF_LENGTH + GOAL_DEPTH));
-        c.fillStyle = TEAM_COLOURS[team] + "33";
+        c.save();
+        c.shadowColor = TEAM_GLOW[team];
+        c.shadowBlur = 18;
+        c.fillStyle = TEAM_COLOURS[team] + "40";
         c.strokeStyle = TEAM_COLOURS[team];
         c.lineWidth = 2;
         c.fillRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
         c.strokeRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
+        c.restore();
       }
 
       // Halfway + thirds
@@ -244,13 +253,17 @@ const PITCH = (() => {
 
       // Boost pads
       const pad = 130 * this.scale;
-      c.fillStyle = "rgba(255,255,255,0.75)";
+      c.save();
+      c.fillStyle = "#efe9ff";
+      c.shadowColor = PAD_GLOW;
+      c.shadowBlur = 14;
       for (const [x, y] of BIG_PADS) {
         const [px, py] = this.toCanvas(x, y);
         c.beginPath();
         c.arc(px, py, pad, 0, Math.PI * 2);
         c.fill();
       }
+      c.restore();
 
       this.renderMoving();
     }
@@ -274,26 +287,30 @@ const PITCH = (() => {
           if (p) pts.push(this.toCanvas(p[0], p[1]));
         }
         pts.push([px, py]);
-        if (pts.length >= 2) {
+        // the trail fades out behind the ball: older segments are fainter and thinner
+        c.lineCap = "round";
+        for (let k = 1; k < pts.length; k++) {
+          const f = k / (pts.length - 1);
           c.beginPath();
-          c.moveTo(...pts[0]);
-          for (const p of pts.slice(1)) c.lineTo(...p);
-          c.strokeStyle = "rgba(255,255,255,0.35)";
-          c.lineWidth = 2;
+          c.moveTo(...pts[k - 1]);
+          c.lineTo(...pts[k]);
+          c.strokeStyle = `rgba(255,255,255,${(0.04 + f * 0.5).toFixed(3)})`;
+          c.lineWidth = 1 + f * 2.2;
           c.stroke();
         }
 
         c.beginPath();
         c.arc(px, py, shadowR, 0, Math.PI * 2);
-        c.fillStyle = "rgba(0,0,0,0.55)";
+        c.fillStyle = "rgba(0,0,0,0.6)";
         c.fill();
+        c.save();
+        c.shadowColor = "rgba(255,255,255,0.9)";
+        c.shadowBlur = 20;
         c.beginPath();
         c.arc(px, py, r, 0, Math.PI * 2);
         c.fillStyle = "#ffffff";
         c.fill();
-        c.strokeStyle = "rgba(0,0,0,0.4)";
-        c.lineWidth = 1;
-        c.stroke();
+        c.restore();
       }
 
       // Cars
@@ -307,10 +324,16 @@ const PITCH = (() => {
         const hx = x + HEADING_LENGTH * Math.cos(yaw), hy = y + HEADING_LENGTH * Math.sin(yaw);
         const [hpx, hpy] = this.toCanvas(hx, hy);
 
+        c.save();
+        c.shadowColor = TEAM_GLOW[player.team];
+        c.shadowBlur = 18;
         c.beginPath();
         c.arc(px, py, r, 0, Math.PI * 2);
         c.fillStyle = TEAM_COLOURS[player.team];
         c.fill();
+        c.restore();
+        c.beginPath();
+        c.arc(px, py, r, 0, Math.PI * 2);
         c.strokeStyle = "#ffffff";
         c.lineWidth = 1.5;
         c.stroke();
@@ -323,8 +346,12 @@ const PITCH = (() => {
 
         c.font = "700 11px var(--font, 'Segoe UI'), sans-serif";
         c.textAlign = "center";
+        c.save();
+        c.shadowColor = "rgba(0,0,0,0.95)";
+        c.shadowBlur = 5;
         c.fillStyle = TEAM_LIGHT[player.team];
         c.fillText(player.name, px, py - r - 8);
+        c.restore();
       }
 
       // Side panel
@@ -342,17 +369,17 @@ const PITCH = (() => {
 
       // Header
       const [blue, orange] = track.scoreAt(i);
-      this.scoreEl.innerHTML = `<span style="color:${TEAM_COLOURS[0]}">Blue ${blue}</span> &ndash; <span style="color:${TEAM_COLOURS[1]}">${orange} Orange</span>`;
+      this.scoreEl.innerHTML = `<span style="color:${TEAM_LIGHT[0]}">Blue ${blue}</span> &ndash; <span style="color:${TEAM_LIGHT[1]}">${orange} Orange</span>`;
       const clock = track.clock[i];
       this.clockEl.textContent = clock === null ? "" : `${Math.floor(clock / 60)}:${String(clock % 60).padStart(2, "0")}`;
       const state = track.states[i];
       const goal = track.lastGoalBefore(i, GOAL_REPLAY_KEEP + 1);
       if (goal && (state === "PostGoalScored" || state === "ReplayPlayback")) {
         this.stateEl.textContent = `GOAL — ${goal.scorer}`;
-        this.stateEl.style.color = TEAM_COLOURS[goal.team];
+        this.stateEl.style.color = TEAM_LIGHT[goal.team];
       } else {
         this.stateEl.textContent = { Countdown: "Kickoff", ReplayPlayback: "Goal replay" }[state] || "";
-        this.stateEl.style.color = "#eda100";
+        this.stateEl.style.color = "#fab219";
       }
 
       const elapsed = t - track.start, total = track.end - track.start;

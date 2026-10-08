@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta name="color-scheme" content="dark" />
 <title>RL Analyser</title>
 <link rel="stylesheet" href="styles.css" />
 </head>
@@ -9,7 +10,7 @@
 <div id="app">
 
   <div class="titlebar">
-    <div class="wordmark">RL <span>Analyser</span> <span id="app-version" class="app-version"></span></div>
+    <div class="wordmark"><span class="rl">RL</span> <span class="word">Analyser</span> <span id="app-version" class="app-version"></span></div>
     <div class="folder-row">
       <span id="folder-label" class="folder-label">No folder selected</span>
     </div>
@@ -157,7 +158,7 @@
       </div>
 
       <aside class="ai-panel">
-        <div class="ai-head">AI analysis</div>
+        <div class="ai-head"><span id="ai-orb" class="ai-orb"></span>AI analysis<span id="ai-status" class="ai-status"></span></div>
         <div id="coach-note" class="coach-note"></div>
         <div id="coach-body" class="ai-body" style="display:none;">
           <div class="ai-scroll">

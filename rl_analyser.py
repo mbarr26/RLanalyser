@@ -493,6 +493,32 @@ class Api:
         return None
 
 
+def dark_title_bar(window):
+    """Best effort: a dark Windows title bar to match the page (Windows 10 20H1+ and 11).
+
+    Anything that goes wrong (older Windows, a different window backend) is ignored: the window
+    just keeps the normal title bar.
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        hwnd = wintypes.HWND(window.native.Handle.ToInt64())
+        set_attribute = ctypes.windll.dwmapi.DwmSetWindowAttribute
+
+        def apply(attribute, value):
+            number = ctypes.c_int(value)
+            set_attribute(hwnd, attribute, ctypes.byref(number), ctypes.sizeof(number))
+
+        apply(20, 1)               # DWMWA_USE_IMMERSIVE_DARK_MODE (19 on early Windows 10 builds)
+        apply(19, 1)
+        apply(35, 0x00070505)      # DWMWA_CAPTION_COLOR (Windows 11): #050507 as 0x00BBGGRR
+        apply(34, 0x00070505)      # DWMWA_BORDER_COLOR
+        apply(36, 0x00F7F4F4)      # DWMWA_TEXT_COLOR: #f4f4f7
+    except Exception:
+        pass
+
+
 def main():
     global WINDOW
     updater.cleanup_old()
@@ -503,8 +529,9 @@ def main():
         width=1440,
         height=900,
         min_size=(1100, 700),
-        background_color="#f7f7f5",
+        background_color="#050507",   # matches the page, so there is no white flash while it loads
     )
+    WINDOW.events.shown += lambda: dark_title_bar(WINDOW)
     webview.start()
     coach.stop_server()   # the AI engine is a separate process; don't leave it running
     if PENDING_INSTALLER is not None:

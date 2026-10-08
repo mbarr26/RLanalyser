@@ -26,6 +26,14 @@ const coachUi = (() => {
     return e;
   }
 
+  // The orb in the panel header pulses while the model works; the text says what it is doing
+  function updateStatus() {
+    const busy = !!(c.working || c.asking);
+    $("ai-orb").classList.toggle("working", busy);
+    $("ai-status").textContent = c.working === "starting" ? "Starting the engine…"
+      : c.working ? "Writing the analysis…" : c.asking ? "Thinking…" : "";
+  }
+
   function setNote(text) {
     const note = $("coach-note");
     note.textContent = text;
@@ -89,6 +97,7 @@ const coachUi = (() => {
   }
 
   function renderSetup() {
+    updateStatus();
     const box = $("coach-setup");
     box.innerHTML = "";
     const s = c.status;
@@ -253,6 +262,7 @@ const coachUi = (() => {
   }
 
   function renderChat() {
+    updateStatus();
     const box = $("chat-log");
     box.innerHTML = "";
     const log = chatLog();
@@ -263,7 +273,14 @@ const coachUi = (() => {
           : "Install the AI model to chat with the coach."));
     }
     for (const msg of log) {
-      box.appendChild(el("div", `chat-msg ${msg.role}${msg.error ? " error" : ""}`, msg.text || "…"));
+      const node = el("div", `chat-msg ${msg.role}${msg.error ? " error" : ""}`);
+      if (msg.text) {
+        node.textContent = msg.text;
+      } else {
+        node.classList.add("typing");   // waiting for the first words: animated dots (fixed markup, no user text)
+        node.innerHTML = "<i></i><i></i><i></i>";
+      }
+      box.appendChild(node);
     }
     box.scrollTop = box.scrollHeight;
     const ready = !!(c.status && c.status.ready) && !c.asking;
@@ -343,6 +360,7 @@ const coachUi = (() => {
       if (path === c.path) {
         const node = lastAssistant();
         if (node) {
+          node.classList.remove("typing");
           node.textContent = log[log.length - 1].text;
           $("chat-log").scrollTop = $("chat-log").scrollHeight;
         }

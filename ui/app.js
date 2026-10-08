@@ -1,5 +1,8 @@
 // RL Analyser - page controller. Talks to the Python side through window.pywebview.api
 // and receives push updates on window.app (called via window.evaluate_js from Python).
+//
+// Three views, switched by showView(): "home" (progress strip + replay tiles), "match" (the
+// replay, stat tabs and the AI panel for one replay) and "progress" (the full progress page).
 
 const state = {
   me: null,
@@ -7,17 +10,37 @@ const state = {
   progressStats: [],
   records: new Map(),   // path -> record payload
   order: [],            // paths, in list order (newest first)
-  currentPath: null,
+  view: "home",
+  currentPath: null,    // the replay open in the match view
   analysing: new Set(),
-  chartStat: "avg_speed",
-  viewing: null,         // player id shown in "My progress"
+  chartStat: "avg_speed",   // full progress page
+  homeStat: "goals",        // home strip
+  viewing: null,            // player id shown in the full progress page
   lastProgress: null,
+  homeProgress: null,
   viewer: null,
+  pendingSeek: null,        // a key-moment time to jump to once the viewer has loaded
   chart: null,
+  homeChart: null,
 };
 
+// Key stats on the home strip: [column, label, higher is better]
+const HOME_STATS = [
+  ["score", "Score", true],
+  ["goals", "Goals", true],
+  ["saves", "Saves", true],
+  ["fifty_win_pct", "50/50 win %", true],
+  ["pct_behind_ball", "% Behind ball", true],
+  ["times_beaten", "Times beaten", false],
+];
+
+let homeDirty = false;
 let progressDirty = false;
-let lastProgressRefresh = 0;
+let lastRefresh = 0;
+let viewerToken = 0;
+let homeToken = 0;
+
+const $ = id => document.getElementById(id);
 
 // ---------- helpers ----------
 
@@ -43,6 +66,11 @@ function computeResult(summary, me) {
   return summary.winningTeam === mine.team ? "Win" : "Loss";
 }
 
+function mean(values) {
+  const v = values.filter(x => x !== null && x !== undefined && !Number.isNaN(x));
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+}
+
 // ---------- init ----------
 
 async function init() {
@@ -50,56 +78,67 @@ async function init() {
   state.me = meta.config.me;
   state.statGroups = meta.statGroups;
   state.progressStats = meta.progressStats;
-  document.getElementById("folder-label").textContent = meta.config.replayDir || "No folder selected";
-  state.chart = new CHART.TrendChart(document.getElementById("trend-chart"));
+  if (meta.version) $("app-version").textContent = "v" + meta.version;
+  $("folder-label").textContent = meta.config.replayDir || "No folder selected";
+  state.chart = new CHART.TrendChart($("trend-chart"));
+  state.homeChart = new CHART.TrendChart($("home-chart"));
   bindUi();
   await doRefresh();
   setInterval(() => {
-    if (progressDirty && isProgressActive() && Date.now() - lastProgressRefresh > 2000) {
-      reloadProgressLists();
-    }
+    if (Date.now() - lastRefresh < 2000) return;
+    if (homeDirty && state.view === "home") reloadHome();
+    else if (progressDirty && state.view === "progress") reloadProgressLists();
   }, 500);
 }
 
 if (window.pywebview) init(); else window.addEventListener("pywebviewready", init);
 
 function bindUi() {
-  document.getElementById("choose-folder-btn").onclick = chooseFolder;
-  document.getElementById("refresh-btn").onclick = doRefresh;
-  document.querySelectorAll(".page-tab").forEach(btn => btn.addEventListener("click", () => {
-    switchPage(btn.dataset.page);
-    if (btn.dataset.page === "progress") reloadProgressLists();
-  }));
+  $("choose-folder-btn").onclick = chooseFolder;
+  $("refresh-btn").onclick = doRefresh;
+  $("back-btn").onclick = goHome;
+  document.querySelectorAll(".back-home").forEach(b => b.addEventListener("click", goHome));
+  $("see-all-btn").onclick = () => { showView("progress"); reloadProgressLists(); };
+  $("home-mode").addEventListener("change", loadHomeProgress);
+
+  const grid = $("tile-grid");
+  const openTile = e => {
+    const tile = e.target.closest(".tile");
+    if (tile && !tile.classList.contains("loading")) openMatch(tile.dataset.path);
+  };
+  grid.addEventListener("click", openTile);
+  grid.addEventListener("keydown", e => { if (e.key === "Enter") openTile(e); });
+
   document.querySelectorAll(".sub-tab").forEach(btn => btn.addEventListener("click", () => switchSubTab(btn.dataset.sub)));
-  document.getElementById("player-select").addEventListener("change", e => {
+  $("player-select").addEventListener("change", e => {
     state.viewing = e.target.value || null;
     updateMeButton();
     loadProgress();
   });
-  document.getElementById("mode-select").addEventListener("change", loadProgress);
-  document.getElementById("me-btn").addEventListener("click", () => {
+  $("mode-select").addEventListener("change", loadProgress);
+  $("me-btn").addEventListener("click", () => {
     if (state.viewing) pywebview.api.set_me(state.viewing);
   });
-  document.getElementById("watch-btn").addEventListener("click", openViewer);
-  document.getElementById("viewer-close").addEventListener("click", closeViewer);
 }
 
-function switchPage(name) {
-  document.querySelectorAll(".page-tab").forEach(b => b.classList.toggle("active", b.dataset.page === name));
-  document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === `page-${name}`));
+function showView(name) {
+  state.view = name;
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === `view-${name}`));
+  if (name !== "match") stopViewer();
+}
+
+function goHome() {
+  state.currentPath = null;
+  showView("home");
+  homeDirty = true;
 }
 
 function switchSubTab(name) {
   document.querySelectorAll(".sub-tab").forEach(b => b.classList.toggle("active", b.dataset.sub === name));
   document.querySelectorAll(".sub-page").forEach(p => p.classList.toggle("active", p.id === `sub-${name}`));
-  if (name === "coach" && state.currentPath) coachUi.open(state.currentPath);
 }
 
-function isProgressActive() {
-  return document.getElementById("page-progress").classList.contains("active");
-}
-
-// ---------- folder & replay list ----------
+// ---------- folder & replay tiles ----------
 
 async function chooseFolder() {
   applyFolderResult(await pywebview.api.choose_folder());
@@ -110,93 +149,68 @@ async function doRefresh() {
 }
 
 function applyFolderResult(res) {
-  document.getElementById("folder-label").textContent = res.replayDir || "No folder selected";
+  $("folder-label").textContent = res.replayDir || "No folder selected";
   state.records = new Map();
   state.order = res.paths || [];
-  state.currentPath = null;
   state.analysing = new Set();
-  showMatchEmpty("Select a replay to see its stats");
-  renderReplayList();
-  if (state.order.length) selectReplay(state.order[0]); // newest replay
-  progressDirty = true;
+  if (state.view !== "home") goHome();
+  state.currentPath = null;
+  renderTiles();
+  homeDirty = progressDirty = true;
 }
 
-function replayRowHtml(path) {
+function tileHtml(path) {
   const record = state.records.get(path);
-  const selected = path === state.currentPath ? " selected" : "";
   if (!record) {
     const stem = path.split(/[\\/]/).pop().replace(/\.replay$/i, "").slice(0, 26);
-    return `<div class="replay-row pending${selected}" data-path="${escapeHtml(path)}">
-      <div class="replay-result"></div>
-      <div class="replay-info"><div class="replay-date">Loading&hellip;</div>
-      <div class="replay-meta"><span class="replay-map">${escapeHtml(stem)}</span></div></div>
+    return `<div class="tile loading pending" data-path="${escapeHtml(path)}">
+      <div class="tile-top"><span>Loading&hellip;</span></div>
+      <div class="tile-score">&nbsp;</div>
+      <div class="tile-map">${escapeHtml(stem)}</div>
     </div>`;
   }
   const s = record.summary;
   const result = computeResult(s, state.me);
-  const pending = record.analysed ? "" : " pending";
-  return `<div class="replay-row${pending}${selected}" data-path="${escapeHtml(path)}" data-result="${result}">
-    <div class="replay-result"></div>
-    <div class="replay-info">
-      <div class="replay-date">${escapeHtml(record.playedAt)}</div>
-      <div class="replay-meta">
-        <span class="replay-map">${escapeHtml(s.mapName)}</span>
-        <span class="replay-mode">${s.teamSize}v${s.teamSize}</span>
-      </div>
-      <div class="replay-score">
-        ${s.team0Score}&ndash;${s.team1Score}
-        ${result ? `<span class="replay-result-tag">&nbsp;&middot;&nbsp;${result}</span>` : ""}
-      </div>
-    </div>
+  const mine = state.me ? s.players.find(p => p.player_id === state.me) : null;
+  const line = mine ? `${mine.goals} G &middot; ${mine.assists} A &middot; ${mine.saves} Sv &middot; ${mine.shots} Sh` : "&nbsp;";
+  const status = record.error ? "No frame data" : record.analysed ? "" : "Analysing&hellip;";
+  return `<div class="tile${record.analysed ? "" : " pending"}" data-path="${escapeHtml(path)}" data-result="${result}" tabindex="0" role="button">
+    <div class="tile-top"><span>${escapeHtml(record.playedAt)}</span><span class="tile-result">${result ? result.toUpperCase() : ""}</span></div>
+    <div class="tile-score"><span class="blue">${s.team0Score}</span><span class="vs">&ndash;</span><span class="orange">${s.team1Score}</span></div>
+    <div class="tile-map">${escapeHtml(s.mapName)} &middot; ${s.teamSize}v${s.teamSize}</div>
+    <div class="tile-line">${status || line}</div>
   </div>`;
 }
 
-function renderReplayList() {
-  const container = document.getElementById("replay-list");
-  if (!state.order.length) {
-    container.innerHTML = '<div class="placeholder">No replays loaded yet</div>';
-    return;
-  }
-  container.innerHTML = state.order.map(replayRowHtml).join("");
-  bindReplayRowClicks();
+function renderTiles() {
+  const grid = $("tile-grid");
+  grid.innerHTML = state.order.length
+    ? state.order.map(tileHtml).join("")
+    : '<div class="placeholder">No replays loaded yet</div>';
 }
 
-function bindReplayRowClicks() {
-  document.querySelectorAll("#replay-list .replay-row").forEach(el => {
-    el.addEventListener("click", () => selectReplay(el.dataset.path));
-  });
+function updateTile(path) {
+  const el = $("tile-grid").querySelector(`[data-path="${CSS.escape(path)}"]`);
+  if (!el) { renderTiles(); return; }
+  el.outerHTML = tileHtml(path);
 }
 
-function updateReplayRow(path) {
-  const container = document.getElementById("replay-list");
-  const el = container.querySelector(`[data-path="${CSS.escape(path)}"]`);
-  if (!el) { renderReplayList(); return; }
-  el.outerHTML = replayRowHtml(path);
-  container.querySelector(`[data-path="${CSS.escape(path)}"]`).addEventListener("click", () => selectReplay(path));
-}
+// ---------- match view ----------
 
-function selectReplay(path) {
-  const container = document.getElementById("replay-list");
-  const prev = container.querySelector(".replay-row.selected");
-  if (prev) prev.classList.remove("selected");
-  const el = container.querySelector(`[data-path="${CSS.escape(path)}"]`);
-  if (el) el.classList.add("selected");
-  state.currentPath = path;
-  showReplay(path);
-}
-
-// ---------- match detail ----------
-
-function showMatchEmpty(text) {
-  document.getElementById("match-content").style.display = "none";
-  const empty = document.getElementById("match-empty");
-  empty.style.display = "block";
-  empty.textContent = text;
-}
-
-function showReplay(path) {
+function openMatch(path, startTime) {
   const record = state.records.get(path);
-  if (!record) { showMatchEmpty("Loading…"); return; }
+  if (!record) return;
+  state.currentPath = path;
+  showView("match");
+  renderMatchData(path);
+  startViewer(path, startTime);
+  coachUi.open(path);
+}
+
+// Header, scoreboard and stat tables; safe to call again when the record is updated.
+function renderMatchData(path) {
+  const record = state.records.get(path);
+  if (!record) return;
   renderMatchHeader(record);
   clearStatTables();
   if (record.error) {
@@ -211,32 +225,27 @@ function showReplay(path) {
     renderStatTables(record);
     setAnalysisNote("Frame stats count live play only (kickoffs included)");
   }
-  if (coachUi.isActive()) coachUi.open(path);
 }
 
-function setAnalysisNote(text) { document.getElementById("analysis-note").textContent = text; }
+function setAnalysisNote(text) { $("analysis-note").textContent = text; }
 
 function clearStatTables() {
-  ["movement", "positioning", "boost"].forEach(id => {
-    document.querySelector(`#table-${id} tbody`).innerHTML = "";
-  });
-  document.getElementById("match-kv").innerHTML = "";
+  for (const group of Object.keys(state.statGroups)) {
+    const body = document.querySelector(`#table-${group.toLowerCase()} tbody`);
+    if (body) body.innerHTML = "";
+  }
+  $("match-kv").innerHTML = "";
 }
 
 function renderMatchHeader(record) {
-  document.getElementById("match-empty").style.display = "none";
-  document.getElementById("match-content").style.display = "flex";
   const s = record.summary;
-  document.getElementById("match-title").textContent = s.name;
+  $("match-title").textContent = s.name;
   const mins = Math.floor(s.secondsPlayed / 60), secs = Math.floor(s.secondsPlayed % 60);
-  document.getElementById("match-subtitle").textContent =
-    `${s.teamSize}v${s.teamSize} ${s.matchType}  ·  Map: ${s.mapName}  ·  ${s.date}  ·  Length: ${mins}:${String(secs).padStart(2, "0")}`;
-  document.getElementById("match-score").innerHTML =
+  $("match-subtitle").textContent =
+    `${s.teamSize}v${s.teamSize} ${s.matchType}  ·  ${s.mapName}  ·  ${s.date}  ·  ${mins}:${String(secs).padStart(2, "0")}`;
+  $("match-score").innerHTML =
     `<span class="team-blue">Blue ${s.team0Score}</span><span class="vs">&ndash;</span><span class="team-orange">${s.team1Score} Orange</span>`;
   renderScoreboard(s);
-  const watchBtn = document.getElementById("watch-btn");
-  watchBtn.disabled = !!record.error;
-  watchBtn.textContent = "Watch match";
 }
 
 function teamRowHtml(team, name, cells) {
@@ -262,14 +271,14 @@ function renderScoreboard(summary) {
     if (g.team === 0) blue++; else orange++;
     parts.push(`${blue}-${orange}  ${escapeHtml(g.scorer)}`);
   }
-  document.getElementById("goals-line").innerHTML = parts.length
+  $("goals-line").innerHTML = parts.length
     ? "Goals:&nbsp;&nbsp;" + parts.join("&nbsp;&nbsp;&middot;&nbsp;&nbsp;")
     : "No goals";
 }
 
 function renderStatTables(record) {
   for (const [group, stats] of Object.entries(state.statGroups)) {
-    const table = document.getElementById(`table-${group.toLowerCase()}`);
+    const table = $(`table-${group.toLowerCase()}`);
     if (!table) continue;
     table.querySelector("thead").innerHTML =
       `<tr><th>Team</th><th>Player</th>${stats.map(([, h]) => `<th>${escapeHtml(h)}</th>`).join("")}</tr>`;
@@ -285,7 +294,7 @@ function renderStatTables(record) {
 }
 
 function renderMatchKv(match) {
-  const el = document.getElementById("match-kv");
+  const el = $("match-kv");
   if (!match) { el.innerHTML = ""; return; }
   const mins = Math.floor(match.live_seconds / 60), secs = Math.floor(match.live_seconds % 60);
   const row = (k, v) => `<div class="k">${k}</div><div class="v">${v}</div>`;
@@ -302,47 +311,144 @@ function renderMatchKv(match) {
   ].join("");
 }
 
-// ---------- watch match ----------
+// ---------- the embedded replay ----------
 
-async function openViewer(startTime) {
-  if (!state.currentPath) return;
-  const btn = document.getElementById("watch-btn");
-  btn.disabled = true;
-  btn.textContent = "Loading…";
-  document.getElementById("viewer-overlay").classList.add("active");
-
-  const track = await pywebview.api.get_track(state.currentPath);
-  if (track && track.error) {
-    alert(track.error);
-    document.getElementById("viewer-overlay").classList.remove("active");
-  } else {
-    if (state.viewer) state.viewer.destroy();
-    state.viewer = new PITCH.PitchViewer({
-      canvas: document.getElementById("pitch-canvas"),
-      side: document.getElementById("viewer-side"),
-      score: document.getElementById("viewer-score"),
-      clock: document.getElementById("viewer-clock"),
-      state: document.getElementById("viewer-state"),
-      playBtn: document.getElementById("viewer-play"),
-      speedSel: document.getElementById("viewer-speed"),
-      skipChk: document.getElementById("viewer-skip"),
-      slider: document.getElementById("viewer-slider"),
-      time: document.getElementById("viewer-time"),
-    }, track);
-    // Jumping in from an AI Coach moment: start a few seconds before it, paused
-    if (typeof startTime === "number") state.viewer.seek(startTime - 3);
-  }
-  btn.textContent = "Watch match";
-  const record = state.records.get(state.currentPath);
-  btn.disabled = !!(record && record.error);
+function resetViewerLabels() {
+  for (const id of ["viewer-score", "viewer-clock", "viewer-state", "viewer-time"]) $(id).textContent = "";
+  $("viewer-side").innerHTML = "";
 }
 
-function closeViewer() {
-  document.getElementById("viewer-overlay").classList.remove("active");
+function stopViewer() {
+  viewerToken++;   // abandon a track that is still loading
   if (state.viewer) { state.viewer.destroy(); state.viewer = null; }
+  state.pendingSeek = null;
 }
 
-// ---------- my progress ----------
+async function startViewer(path, startTime) {
+  stopViewer();
+  resetViewerLabels();
+  const token = viewerToken;
+  const msg = $("viewer-msg");
+  msg.textContent = "Loading replay…";
+  if (typeof startTime === "number") state.pendingSeek = startTime;
+
+  const track = await pywebview.api.get_track(path);
+  if (token !== viewerToken || state.currentPath !== path) return;   // the user moved on
+  if (track && track.error) {
+    msg.textContent = `Can't show this replay: ${track.error}`;
+    return;
+  }
+  msg.textContent = "";
+  state.viewer = new PITCH.PitchViewer({
+    canvas: $("pitch-canvas"),
+    side: $("viewer-side"),
+    score: $("viewer-score"),
+    clock: $("viewer-clock"),
+    state: $("viewer-state"),
+    playBtn: $("viewer-play"),
+    speedSel: $("viewer-speed"),
+    skipChk: $("viewer-skip"),
+    slider: $("viewer-slider"),
+    time: $("viewer-time"),
+  }, track, { autoplay: true });
+  if (state.pendingSeek !== null) {
+    state.viewer.seek(state.pendingSeek - 3);
+    state.pendingSeek = null;
+  }
+}
+
+// A key moment's Watch button: jump to a few seconds before it and play
+function watchMoment(time) {
+  if (!state.viewer) { state.pendingSeek = time; return; }
+  state.viewer.seek(time - 3);
+  if (!state.viewer.playing) state.viewer.togglePlay();
+}
+
+// ---------- home: progress strip ----------
+
+function renderModeSelects() {
+  const modes = [...new Set(
+    [...state.records.values()].filter(r => r.summary).map(r => `${r.summary.teamSize}v${r.summary.teamSize}`)
+  )].sort();
+  for (const id of ["mode-select", "home-mode"]) {
+    const sel = $(id);
+    const current = sel.value || "All";
+    sel.innerHTML = ["All", ...modes].map(m => `<option${m === current ? " selected" : ""}>${m}</option>`).join("");
+  }
+}
+
+function reloadHome() {
+  renderModeSelects();
+  loadHomeProgress();
+  lastRefresh = Date.now();
+  homeDirty = false;
+}
+
+async function loadHomeProgress() {
+  const token = ++homeToken;
+  if (!state.me) {
+    $("home-summary").innerHTML = '<span class="sub">Your stats appear here once replays have loaded</span>';
+    $("home-cards").innerHTML = "";
+    state.homeChart.setData("", [], [], v => v);
+    return;
+  }
+  const mode = $("home-mode").value;
+  const data = await pywebview.api.get_progress(state.me, mode === "All" ? null : mode);
+  if (token !== homeToken) return;
+  state.homeProgress = data;
+  const rate = (data.wins + data.losses) ? `  ·  ${Math.round(data.wins / (data.wins + data.losses) * 100)}% win rate` : "";
+  const known = computeKnownPlayers().find(p => p.id === state.me);
+  $("home-summary").innerHTML = data.count
+    ? `${escapeHtml(known ? known.name : "You")} <span class="sub">&middot; ${data.count} games &middot; ${data.wins} W &middot; ${data.losses} L${rate}</span>`
+    : '<span class="sub">No games for this mode yet</span>';
+  renderHomeCards(data);
+  drawHomeChart();
+}
+
+function statMeta(col) {
+  return state.progressStats.find(([c]) => c === col);
+}
+
+function renderHomeCards(data) {
+  const box = $("home-cards");
+  box.innerHTML = "";
+  for (const [col, label, higherIsBetter] of HOME_STATS) {
+    const meta = statMeta(col);
+    if (!meta) continue;
+    const fmt = meta[2];
+    const values = data.chart[col] || [];
+    const all = mean(values), recent = mean(values.slice(-10));
+    const card = document.createElement("button");
+    card.className = "stat-card" + (col === state.homeStat ? " selected" : "");
+    let trend = all === null ? "" : `avg ${fmtPy(fmt, all)}`;
+    if (all !== null && recent !== null && values.length >= 3) {
+      const diff = recent - all;
+      const arrow = Math.abs(diff) < 1e-9 ? "" : diff > 0 ? "▲ " : "▼ ";
+      trend = `${arrow}${fmtPy(fmt, Math.abs(diff))} vs avg ${fmtPy(fmt, all)}`;
+    }
+    card.innerHTML = `<div class="stat-label">${escapeHtml(label)}</div>
+      <div class="stat-value">${fmtPy(fmt, recent ?? all)}</div>
+      <div class="stat-trend">${escapeHtml(trend)}</div>`;
+    card.title = `Last 10 games${higherIsBetter ? "" : " (lower is better)"} - click to chart`;
+    card.addEventListener("click", () => {
+      state.homeStat = col;
+      renderHomeCards(data);
+      drawHomeChart();
+    });
+    box.appendChild(card);
+  }
+}
+
+function drawHomeChart() {
+  if (!state.homeProgress) return;
+  const meta = statMeta(state.homeStat);
+  if (!meta) return;
+  const [, heading, fmt] = meta;
+  state.homeChart.setData(
+    heading, state.homeProgress.chart[state.homeStat] || [], state.homeProgress.chartLabels || [], v => fmtPy(fmt, v));
+}
+
+// ---------- full progress page ----------
 
 function computeKnownPlayers() {
   const recs = [...state.records.values()]
@@ -364,7 +470,7 @@ function computeKnownPlayers() {
 function renderPlayerSelect() {
   const players = computeKnownPlayers();
   state.knownPlayers = players;
-  const sel = document.getElementById("player-select");
+  const sel = $("player-select");
   sel.innerHTML = players.map(p =>
     `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}  (${p.count} game${p.count !== 1 ? "s" : ""})${p.id === state.me ? "  - you" : ""}</option>`
   ).join("");
@@ -376,36 +482,27 @@ function renderPlayerSelect() {
   updateMeButton();
 }
 
-function renderModeSelect() {
-  const modes = [...new Set(
-    [...state.records.values()].filter(r => r.summary).map(r => `${r.summary.teamSize}v${r.summary.teamSize}`)
-  )].sort();
-  const sel = document.getElementById("mode-select");
-  const current = sel.value || "All";
-  sel.innerHTML = ["All", ...modes].map(m => `<option${m === current ? " selected" : ""}>${m}</option>`).join("");
-}
-
 function updateMeButton() {
-  document.getElementById("me-btn").disabled = !state.viewing || state.viewing === state.me;
+  $("me-btn").disabled = !state.viewing || state.viewing === state.me;
 }
 
 function reloadProgressLists() {
   renderPlayerSelect();
-  renderModeSelect();
+  renderModeSelects();
   loadProgress();
-  lastProgressRefresh = Date.now();
+  lastRefresh = Date.now();
   progressDirty = false;
 }
 
 async function loadProgress() {
   if (!state.viewing) {
-    document.getElementById("progress-summary").innerHTML = '<span class="sub">No replays loaded yet</span>';
+    $("progress-summary").innerHTML = '<span class="sub">No replays loaded yet</span>';
     document.querySelector("#compare-table tbody").innerHTML = "";
     document.querySelector("#games-table tbody").innerHTML = "";
     state.chart.setData("", [], [], v => v);
     return;
   }
-  const modeSel = document.getElementById("mode-select").value;
+  const modeSel = $("mode-select").value;
   const data = await pywebview.api.get_progress(state.viewing, modeSel === "All" ? null : modeSel);
   state.lastProgress = data;
   renderProgressSummary(data);
@@ -416,7 +513,7 @@ async function loadProgress() {
 
 function renderProgressSummary(data) {
   const rate = (data.wins + data.losses) ? `  ·  ${Math.round(data.wins / (data.wins + data.losses) * 100)}% win rate` : "";
-  document.getElementById("progress-summary").innerHTML = data.count
+  $("progress-summary").innerHTML = data.count
     ? `${data.count} games <span class="sub">&middot; ${data.wins} W &middot; ${data.losses} L${rate}</span>`
     : '<span class="sub">No games for this player/mode yet</span>';
 }
@@ -449,24 +546,17 @@ function renderGamesTable(games) {
       <td>${fmtNum(g.score)}</td><td>${fmtNum(g.goals)}</td><td>${fmtNum(g.assists)}</td><td>${fmtNum(g.saves)}</td><td>${fmtNum(g.shots)}</td>
       <td>${fmtNum(g.avgSpeed)}</td><td>${fmtNum(g.pctBehindBall, 1)}</td><td>${fmtNum(g.avgBoost)}</td>
     </tr>`).join("");
-  tbody.querySelectorAll("tr").forEach(tr => tr.addEventListener("dblclick", () => openReplay(tr.dataset.path)));
+  tbody.querySelectorAll("tr").forEach(tr => tr.addEventListener("dblclick", () => openMatch(tr.dataset.path)));
 }
 
 function drawChart() {
   if (!state.lastProgress) return;
-  const meta = state.progressStats.find(([c]) => c === state.chartStat);
+  const meta = statMeta(state.chartStat);
   if (!meta) return;
   const [, heading, fmt] = meta;
   const values = state.lastProgress.chart[state.chartStat] || [];
   const labels = state.lastProgress.chartLabels || [];
   state.chart.setData(heading, values, labels, v => fmtPy(fmt, v));
-}
-
-function openReplay(path) {
-  switchPage("matches");
-  selectReplay(path);
-  const el = document.querySelector(`#replay-list [data-path="${CSS.escape(path)}"]`);
-  if (el) el.scrollIntoView({ block: "nearest" });
 }
 
 // ---------- pushes from Python ----------
@@ -476,24 +566,27 @@ window.app = {
     if (!state.order.includes(payload.path)) state.order.unshift(payload.path);
     state.records.set(payload.path, payload);
     state.analysing.delete(payload.path);
-    updateReplayRow(payload.path);
-    if (payload.path === state.currentPath) showReplay(payload.path);
-    progressDirty = true;
+    updateTile(payload.path);
+    if (state.view === "match" && payload.path === state.currentPath) {
+      renderMatchData(payload.path);
+      coachUi.open(payload.path);   // no-op if already loaded; retries if it was waiting for the analysis
+    }
+    homeDirty = progressDirty = true;
   },
   onStatus(text) {
-    document.getElementById("status").textContent = text;
+    $("status").textContent = text;
   },
   onDone() {
-    progressDirty = true;
+    homeDirty = progressDirty = true;
   },
   onMe(me) {
     state.me = me;
-    renderReplayList();
+    renderTiles();
     if (state.currentPath) {
       const r = state.records.get(state.currentPath);
       if (r) renderScoreboard(r.summary);
     }
-    progressDirty = true;
+    homeDirty = progressDirty = true;
     coachUi.invalidate();   // the coach talks to "you", so a new "you" means new findings
   },
   onError(message) {

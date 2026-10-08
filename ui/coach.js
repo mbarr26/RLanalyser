@@ -10,6 +10,8 @@ const coachUi = (() => {
     download: null,      // {done, total, phase} while a model download runs
     downloadError: "",
     working: null,       // "starting" | "writing" while the AI analysis is being made
+    writing: new Set(),  // paths whose analysis is being written (survives opening another match)
+    autoStarted: new Set(),   // "path|player" pairs we already started automatically, so a failure never loops
     error: "",
     chats: new Map(),    // path -> [{role, text, error}]
     asking: false,
@@ -24,15 +26,11 @@ const coachUi = (() => {
     return e;
   }
 
-  function isActive() {
-    return $("sub-coach").classList.contains("active");
-  }
-
   function setNote(text) {
     const note = $("coach-note");
     note.textContent = text;
     note.style.display = text ? "block" : "none";
-    $("coach-body").style.display = text ? "none" : "block";
+    $("coach-body").style.display = text ? "none" : "flex";
   }
 
   // ---------- loading a match ----------
@@ -43,7 +41,7 @@ const coachUi = (() => {
     c.path = path;
     c.data = null;
     c.error = "";
-    c.working = null;
+    c.working = c.writing.has(path) ? "writing" : null;
     setNote("Finding the key moments…");
     const [res, status] = await Promise.all([pywebview.api.get_coach(path), pywebview.api.coach_status()]);
     if (c.path !== path) return;   // the user moved on to another match
@@ -53,11 +51,21 @@ const coachUi = (() => {
     if (!res.chatKept) c.chats.delete(path);
     setNote("");
     render();
+    maybeAutoStart();
   }
 
   function invalidate() {
     c.data = null;
-    if (isActive() && state.currentPath) open(state.currentPath, true);
+    if (state.view === "match" && state.currentPath) open(state.currentPath, true);
+  }
+
+  // The AI analysis starts by itself the first time a match is opened (once the model is installed)
+  function maybeAutoStart() {
+    if (!c.data || !c.status || !c.status.ready || c.working || c.data.report) return;
+    const key = `${c.path}|${c.data.me}`;
+    if (c.autoStarted.has(key)) return;
+    c.autoStarted.add(key);
+    generate();
   }
 
   // ---------- rendering ----------
@@ -182,7 +190,7 @@ const coachUi = (() => {
       if (m.clock_text) title.appendChild(el("span", "coach-clock", m.clock_text));
       title.appendChild(document.createTextNode(m.title));
       const watch = el("button", "btn", "Watch");
-      watch.addEventListener("click", () => openViewer(m.time));
+      watch.addEventListener("click", () => watchMoment(m.time));
       head.append(title, watch);
       card.appendChild(head);
       card.appendChild(el("div", "coach-detail", m.detail));
@@ -232,6 +240,7 @@ const coachUi = (() => {
   async function generate() {
     c.error = "";
     c.working = "starting";
+    c.writing.add(c.path);
     renderSetup();
     await pywebview.api.coach_generate(c.path);
   }
@@ -251,7 +260,7 @@ const coachUi = (() => {
       box.appendChild(el("div", "coach-muted chat-hint",
         c.status && c.status.ready
           ? "Ask anything about this match. Mention a game clock (like 2:30) or a goal (like \"the second goal\") and the coach will look at exactly where everyone was."
-          : "Download the AI model above to chat with the coach."));
+          : "Install the AI model to chat with the coach."));
     }
     for (const msg of log) {
       box.appendChild(el("div", `chat-msg ${msg.role}${msg.error ? " error" : ""}`, msg.text || "…"));
@@ -300,7 +309,7 @@ const coachUi = (() => {
       if (p.error) { c.download = null; c.downloadError = p.error; }
       else if (p.finished) {
         c.download = null;
-        pywebview.api.coach_status().then(s => { c.status = s; if (c.data) render(); });
+        pywebview.api.coach_status().then(s => { c.status = s; if (c.data) { render(); maybeAutoStart(); } });
         return;
       } else {
         c.download = p;
@@ -314,12 +323,14 @@ const coachUi = (() => {
       if (c.data) renderSetup();
     },
     onCoachReport(path, report) {
+      c.writing.delete(path);
       if (path !== c.path || !c.data) return;
       c.working = null;
       c.data.report = report;
       render();
     },
     onCoachError(path, message) {
+      c.writing.delete(path);
       if (path !== c.path) return;
       c.working = null;
       c.error = message;
@@ -354,5 +365,5 @@ const coachUi = (() => {
   });
 
   bind();
-  return { open, invalidate, isActive };
+  return { open, invalidate };
 })();

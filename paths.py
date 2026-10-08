@@ -21,6 +21,8 @@ def bundled(*parts):
 
 
 def user_data(*parts):
+    if FROZEN:
+        LOCAL_DIR.mkdir(parents=True, exist_ok=True)   # first run after install: the folder doesn't exist yet
     return (LOCAL_DIR if FROZEN else Path(__file__).parent).joinpath(*parts)
 
 

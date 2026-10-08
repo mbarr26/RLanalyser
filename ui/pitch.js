@@ -85,7 +85,7 @@ const PITCH = (() => {
   }
 
   class PitchViewer {
-    constructor(els, track) {
+    constructor(els, track, options = {}) {
       this.canvas = els.canvas;
       this.ctx = this.canvas.getContext("2d");
       this.sideEl = els.side;
@@ -113,14 +113,21 @@ const PITCH = (() => {
       this.resizeObserver = new ResizeObserver(() => this.render());
       this.resizeObserver.observe(this.canvas);
 
+      // Named handlers so destroy() can remove them: the controls are shared by every viewer
+      // opened in a session, and a stale viewer must not keep reacting to them.
       this.playBtn.onclick = () => this.togglePlay();
-      this.slider.addEventListener("mousedown", () => { this.dragging = true; });
-      this.slider.addEventListener("input", () => {
+      this.onSliderDown = () => { this.dragging = true; };
+      this.onSliderInput = () => {
         if (this.dragging) { this.t = parseFloat(this.slider.value); this.render(); }
-      });
-      this.slider.addEventListener("mouseup", () => { this.dragging = false; this.seek(parseFloat(this.slider.value)); });
+      };
+      this.onSliderUp = () => { this.dragging = false; this.seek(parseFloat(this.slider.value)); };
+      this.slider.addEventListener("mousedown", this.onSliderDown);
+      this.slider.addEventListener("input", this.onSliderInput);
+      this.slider.addEventListener("mouseup", this.onSliderUp);
 
       this.onKey = (e) => {
+        // Typing in the chat (or using a control) must not pause or scrub the replay
+        if (["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(e.target.tagName)) return;
         if (e.code === "Space") { e.preventDefault(); this.togglePlay(); }
         else if (e.code === "ArrowLeft") this.seek(this.t - 5);
         else if (e.code === "ArrowRight") this.seek(this.t + 5);
@@ -129,6 +136,7 @@ const PITCH = (() => {
 
       this.render();
       this.tick();
+      if (options.autoplay) this.togglePlay();
     }
 
     destroy() {
@@ -136,6 +144,11 @@ const PITCH = (() => {
       if (this.rafId) cancelAnimationFrame(this.rafId);
       this.resizeObserver.disconnect();
       window.removeEventListener("keydown", this.onKey);
+      this.slider.removeEventListener("mousedown", this.onSliderDown);
+      this.slider.removeEventListener("input", this.onSliderInput);
+      this.slider.removeEventListener("mouseup", this.onSliderUp);
+      this.playBtn.onclick = null;
+      this.playBtn.textContent = "Play";
     }
 
     buildSide() {

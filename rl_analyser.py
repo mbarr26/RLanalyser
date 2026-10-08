@@ -25,6 +25,7 @@ from pitch_viewer import build_track
 from progress import PROGRESS_STATS, comparison, guess_me, player_games
 from replay_library import LibraryScanner, analyse, list_replays
 from replay_parser import ReplayParseError
+from version import APP_VERSION
 
 CONFIG_PATH = user_data("config.json")
 UI_DIR = bundled("ui")
@@ -212,6 +213,7 @@ def progress_payload(player_id, mode):
 class Api:
     def get_meta(self):
         return {
+            "version": APP_VERSION,
             "config": {"replayDir": str(REPLAY_DIR) if REPLAY_DIR else None, "me": CHOSEN_ME},
             "statGroups": {group: [[c, h, f] for c, h, f in stats] for group, stats in STAT_GROUPS.items()},
             "progressStats": [[c, h, f] for c, h, f in PROGRESS_STATS],
@@ -414,9 +416,9 @@ def main():
         "RL Analyser",
         str(UI_DIR / "index.html"),
         js_api=Api(),
-        width=1320,
-        height=840,
-        min_size=(1000, 640),
+        width=1440,
+        height=900,
+        min_size=(1100, 700),
         background_color="#f7f7f5",
     )
     webview.start()

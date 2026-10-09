@@ -25,7 +25,8 @@ from frame_data import load_game_frames
 from paths import bundled, user_data
 from pitch_viewer import build_track
 from progress import PROGRESS_STATS, RECENT_GAMES, comparison, guess_me, player_games
-from replay_library import LibraryScanner, analyse, list_replays
+from postgame import current_session, game_row, headline_stats
+from replay_library import LibraryScanner, ReplayWatcher, analyse, list_replays
 from replay_parser import ReplayParseError
 from version import APP_VERSION
 
@@ -83,6 +84,7 @@ CHOSEN_ME = load_config().get("me")   # player id of "you", once picked
 GUESSED_ME = None                     # used until then (see progress.guess_me)
 RECORDS = {}                          # path -> ReplayRecord
 SCANNER = None
+WATCHER = None                        # notices replays saved while the app is open
 ANALYSING = set()                     # replay paths being analysed because they were opened
 
 # AI coach state. Facts (moments, insights, frame data) and chats are kept for the few most
@@ -171,9 +173,12 @@ def handle_scan_message(scanner, kind, *data):
 
 def start_scan_and_list():
     """(Re)list the folder, start background loading, and return the ordered paths."""
-    global SCANNER, RECORDS
+    global SCANNER, RECORDS, WATCHER
     if SCANNER:
         SCANNER.stop()
+    if WATCHER:
+        WATCHER.stop()
+        WATCHER = None
     RECORDS = {}
     if not REPLAY_DIR:
         return []
@@ -183,6 +188,8 @@ def start_scan_and_list():
         push("onError", f"Could not read folder:\n{e}")
         SCANNER = None
         return []
+    WATCHER = ReplayWatcher(REPLAY_DIR, paths, handle_new_replay)   # also when empty: the first game may arrive later
+    WATCHER.start()
     if not paths:
         push("onStatus", "No .replay files found in this folder")
         SCANNER = None
@@ -193,9 +200,74 @@ def start_scan_and_list():
     return [str(p) for p in paths]
 
 
+def is_onboarded():
+    """Anyone who already chose a folder or a player before the welcome guide existed skips it."""
+    config = load_config()
+    return bool(config.get("onboarded") or config.get("me") or config.get("replay_dir"))
+
+
 def rank_for(mode):
     """The rank band the player said they play at in this mode (None if not set)."""
     return load_config().get("ranks", {}).get(mode)
+
+
+def flash_window():
+    """Flash the taskbar button until the window is brought to the front (best effort, Windows only)."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class FlashInfo(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.UINT), ("hwnd", wintypes.HWND), ("dwFlags", wintypes.DWORD),
+                        ("uCount", wintypes.UINT), ("dwTimeout", wintypes.DWORD)]
+
+        hwnd = wintypes.HWND(WINDOW.native.Handle.ToInt64())
+        info = FlashInfo(ctypes.sizeof(FlashInfo), hwnd, 0x3 | 0xC, 0, 0)   # FLASHW_ALL | FLASHW_TIMERNOFG
+        ctypes.windll.user32.FlashWindowEx(ctypes.byref(info))
+    except Exception:
+        pass
+
+
+def postgame_card(record):
+    """What the page shows right after a game: result, standout stats, the top finding. None if you weren't in it."""
+    me_id = effective_me()
+    s = record.summary
+    me = s.player(me_id) if me_id else None
+    if me is None or me.name not in (record.players or {}):
+        return None
+    mode = f"{s.team_size}v{s.team_size}"
+    games = player_games(list(RECORDS.values()), me_id)
+    before = games[games.path != record.path]
+    stats = headline_stats(game_row(me, record.players[me.name]), before, mode, rank_for(mode))
+    mine, theirs = (s.team0_score, s.team1_score) if me.team == 0 else (s.team1_score, s.team0_score)
+    return {
+        "path": str(record.path), "result": "Win" if mine > theirs else "Loss" if mine < theirs else "Draw",
+        "scoreLine": f"{mine}-{theirs}", "mapName": s.map_name, "mode": mode, "stats": stats, "finding": None,
+    }
+
+
+def handle_new_replay(path):
+    """A replay appeared while the app was open: analyse it, show the post-game card, start the AI report."""
+    try:
+        record, _game = analyse(path)
+    except (ReplayParseError, OSError):
+        return
+    RECORDS[path] = record
+    push("onRecord", record_payload(record))
+    maybe_update_guessed_me()
+    if record.error:
+        return
+    card = postgame_card(record)
+    if card is None:
+        return
+    facts = API.get_coach(str(path))          # the rule-based findings; also primes the AI chat
+    if "insights" in facts:
+        bad = [i for i in facts["insights"] if i["kind"] == "bad"] or facts["insights"]
+        card["finding"] = bad[0]["text"] if bad else None
+    push("onNewMatch", card)
+    flash_window()
+    if "insights" in facts and coach.model_ready(coach_tier()):
+        API.coach_generate(str(path))         # so the written report is ready by the time they open it
 
 
 def progress_payload(player_id, mode):
@@ -235,6 +307,7 @@ class Api:
         return {
             "version": APP_VERSION,
             "updatesConfigured": bool(update_source()),
+            "onboarded": is_onboarded(),
             "config": {"replayDir": str(REPLAY_DIR) if REPLAY_DIR else None, "me": CHOSEN_ME,
                        "ranks": load_config().get("ranks", {})},
             "rankBands": benchmarks.BANDS,
@@ -283,6 +356,14 @@ class Api:
         save_config({**load_config(), "me": player_id})
         push("onMe", effective_me())
         return None
+
+    def finish_onboarding(self):
+        save_config({**load_config(), "onboarded": True})
+        return None
+
+    def get_session(self, player_id):
+        """Tonight's games and whether it's going badly (None if they haven't played recently)."""
+        return current_session(RECORDS.values(), player_id) if player_id else None
 
     def set_rank(self, mode, band):
         """Remember which rank band the player is in for a mode (None clears it)."""
@@ -543,13 +624,17 @@ def dark_title_bar(window):
         pass
 
 
+API = None   # the one Api instance (set in main), so background code can call its methods
+
+
 def main():
-    global WINDOW
+    global WINDOW, API
+    API = Api()
     updater.cleanup_old()
     WINDOW = webview.create_window(
         "RL Analyser",
         str(UI_DIR / "index.html"),
-        js_api=Api(),
+        js_api=API,
         width=1440,
         height=900,
         min_size=(1100, 700),

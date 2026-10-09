@@ -91,6 +91,7 @@ async function init() {
   state.homeChart = new CHART.TrendChart($("home-chart"));
   bindUi();
   await doRefresh();
+  if (!meta.onboarded) welcome.start();
   setInterval(() => {
     if (Date.now() - lastRefresh < 2000) return;
     if (homeDirty && state.view === "home") reloadHome();
@@ -105,6 +106,7 @@ function bindUi() {
   $("refresh-btn").onclick = doRefresh;
   $("back-btn").onclick = goHome;
   document.querySelectorAll(".back-home").forEach(b => b.addEventListener("click", goHome));
+  $("setup-btn").onclick = () => welcome.start();
   $("see-all-btn").onclick = () => { showView("progress"); reloadProgressLists(); };
   $("home-mode").addEventListener("change", loadHomeProgress);
   $("home-rank").addEventListener("change", async e => {
@@ -165,7 +167,7 @@ function applyFolderResult(res) {
   state.records = new Map();
   state.order = res.paths || [];
   state.analysing = new Set();
-  if (state.view !== "home") goHome();
+  if (state.view !== "home" && state.view !== "welcome") goHome();
   state.currentPath = null;
   renderTiles(true);
   homeDirty = progressDirty = true;
@@ -393,6 +395,7 @@ function renderModeSelects() {
 function reloadHome() {
   renderModeSelects();
   loadHomeProgress();
+  homeAlerts.loadSession();
   lastRefresh = Date.now();
   homeDirty = false;
 }
@@ -667,12 +670,17 @@ window.app = {
       coachUi.open(payload.path);   // no-op if already loaded; retries if it was waiting for the analysis
     }
     homeDirty = progressDirty = true;
+    welcome.refresh();
+  },
+  onNewMatch(card) {
+    homeAlerts.newMatch(card);
   },
   onStatus(text) {
     $("status").textContent = text;
   },
   onDone() {
     homeDirty = progressDirty = true;
+    welcome.refresh();
   },
   onMe(me) {
     state.me = me;
@@ -682,6 +690,7 @@ window.app = {
       if (r) renderScoreboard(r.summary);
     }
     homeDirty = progressDirty = true;
+    welcome.refresh();
     coachUi.invalidate();   // the coach talks to "you", so a new "you" means new findings
   },
   onError(message) {

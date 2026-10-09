@@ -179,3 +179,47 @@ class LibraryScanner(threading.Thread):
             except (ReplayParseError, OSError):
                 unreadable += 1
         self.send(("done", unreadable))
+
+
+class ReplayWatcher(threading.Thread):
+    """Background thread that notices replays saved after it started and passes each to on_new(path).
+
+    Polls the folder (no extra dependency). Rocket League writes a replay at the end of a match, so
+    a new file is only reported once its size has stopped changing between two polls.
+    `known` is the set of paths that already existed; it is updated as new ones are reported.
+    """
+
+    def __init__(self, folder, known, on_new, interval=5.0):
+        super().__init__(daemon=True)
+        self.folder = folder
+        self.known = set(known)
+        self.on_new = on_new
+        self.interval = interval
+        self._stop_event = threading.Event()
+
+    def stop(self):
+        self._stop_event.set()
+
+    def run(self):
+        sizes = {}
+        while not self._stop_event.wait(self.interval):
+            try:
+                paths = list_replays(self.folder)
+            except OSError:
+                continue            # folder briefly unavailable (e.g. a network drive); try again
+            for path in paths:
+                if path in self.known:
+                    continue
+                try:
+                    size = path.stat().st_size
+                except OSError:
+                    continue
+                if size and sizes.get(path) == size:
+                    self.known.add(path)
+                    sizes.pop(path, None)
+                    try:
+                        self.on_new(path)
+                    except Exception:   # one bad replay must not stop the watching
+                        pass
+                else:
+                    sizes[path] = size

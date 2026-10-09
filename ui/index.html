@@ -16,6 +16,7 @@
     </div>
     <button id="choose-folder-btn" class="btn">Choose folder&hellip;</button>
     <button id="refresh-btn" class="btn">Refresh</button>
+    <button id="setup-btn" class="btn btn-small" title="Replay folder, who you are and your rank">Setup guide</button>
     <button id="update-btn" class="btn btn-small" title="">Check for updates</button>
     <span id="status" class="status"></span>
   </div>
@@ -33,9 +34,20 @@
     </div>
   </div>
 
+  <!-- Welcome: first-run setup, also reachable from "Setup guide" -->
+  <div id="view-welcome" class="view">
+    <div class="home-scroll">
+      <div class="welcome">
+        <div id="welcome-steps" class="welcome-steps"></div>
+        <div id="welcome-body" class="card welcome-card"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Home: progression on top, every replay as a tile -->
   <div id="view-home" class="view active">
     <div class="home-scroll">
+      <div id="home-alerts"></div>
       <section class="home-strip">
         <div class="strip-head">
           <div>
@@ -235,6 +247,7 @@
 <script src="chart.js"></script>
 <script src="pitch.js"></script>
 <script src="app.js"></script>
+<script src="welcome.js"></script>
 <script src="coach.js"></script>
 <script src="update.js"></script>
 </body>

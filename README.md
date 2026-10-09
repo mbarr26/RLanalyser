@@ -24,6 +24,19 @@ layered surfaces, one electric-violet accent and soft glows. It ships as a Windo
   and percentile column, and the AI coach is told how the game ranks so its advice is rank-relative.
   Needs `benchmarks.json` (see [Rank benchmarks](#rank-benchmarks)); without it the picker is hidden.
 
+- **Welcome guide** – the first time the app runs (or from the title bar's **Setup guide**) it walks
+  through: your replay folder (with a reminder to turn on Rocket League's **Auto-save replays** if the
+  folder is empty), which player is you, your rank per mode (when `benchmarks.json` exists), and then
+  "here's what we found": your biggest weaknesses for your rank, or findings from your latest game.
+  Anyone who already had a folder or player saved skips it.
+- **After every game** – the app watches the replay folder (checks every 5 s). When a match is saved it
+  is analysed straight away, the taskbar button flashes, and a **Just finished** card appears on Home
+  with the result, the three stats that stood out (against your rank, or your own usual), and the top
+  finding. If the AI model is installed its report is written in the background so it's ready to open.
+- **Tonight** – games less than 30 minutes apart form a session. The card shows the session's record
+  and score/goals/saves/shots against your usual, and after three losses in a row it gently suggests
+  a break. It disappears 6 hours after your last game.
+
 ### Match screen
 - **Replay (left)** – the full match as a top-down 2D playback with every car and the ball,
   boost and speed per player. It **starts playing as soon as you open the match**, with
@@ -127,13 +140,15 @@ directions:
 | `ui/coach.js` | The AI panel and the Findings / Key moments tabs: model download, the AI report (started automatically), and the chat. |
 | `ui/chart.js` | Canvas-drawn trend chart (per-game dots + rolling average, with hover). |
 | `ui/pitch.js` | Canvas-drawn replay viewer embedded in the match screen: playback, pitch geometry, cars and ball. |
-| `replay_library.py` | Lists replays in a folder, analyses them (`analyse`), caches results as JSON in `cache/`, and `LibraryScanner` (background thread that loads/analyses a whole folder). |
+| `replay_library.py` | Lists replays in a folder, analyses them (`analyse`), caches results as JSON in `cache/`, `LibraryScanner` (background thread that loads/analyses a whole folder) and `ReplayWatcher` (polls the folder for replays saved while the app is open). |
 | `replay_parser.py` | Runs `tools/rrrocket.exe` on a replay and turns the header into a `ReplaySummary` (scores, players with stable `player_id`, goals, who recorded it). |
 | `frame_data.py` | Runs rrrocket with `--network-parse` and converts the network frames into pandas tables: `frames`, `ball` (with the game's last-touch team), `players` (with jump / double-jump / dodge states), `pickups` (`GameFrames`). Also holds the shared pitch constants. |
 | `analysis.py` | Computes per-player stats (`player_stats`) and match stats (`team_stats`) from `GameFrames`. `STAT_GROUPS` defines which stats appear in which tab (sent to the page so it can build the tables generically). |
 | `benchmarks.py` | Rank benchmarks: loads `benchmarks.json`, `percentile`, `closest_band`, and `profile` (your recent form vs a rank, with strengths and weaknesses). Pure measurement. |
 | `benchmarks.json` | Per mode and rank band, the 10/25/50/75/90th percentile of every stat. Built by `dev_tools/build_benchmarks.py`; bundled into the installer if present. |
 | `dev_tools/build_benchmarks.py` | Developer-only: downloads public ballchasing.com replays by rank, runs `analyse()` on them and writes `benchmarks.json`. Not shipped. |
+| `postgame.py` | Post-game card and session logic: `headline_stats` (the stats that stood out in one game), `current_session` (tonight's record and losing-streak check). Pure measurement. |
+| `ui/welcome.js` | The first-run guide (`welcome`) and the Home cards for the game just played and tonight's session (`homeAlerts`). |
 | `progress.py` | Cross-replay stats for one player: `player_games` (one row per game), `comparison` (all / last 10 / wins / losses averages), `known_players`, `guess_me`. |
 | `pitch_viewer.py` | `build_track`: turns a match's frame data into the JSON-serialisable track `ui/pitch.js` plays back. |
 | `touches.py` | Ball touches (the ball's velocity jumps while a car is next to it), 50/50s, beaten-to-the-ball events, dribbles, half-flips / wave dashes, last man, and `skill_stats` (the Challenges / Mechanics / Defence columns). Also the shared per-frame table `live_table` and `find_runs`. Pure measurement, no AI. |

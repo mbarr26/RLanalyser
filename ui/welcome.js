@@ -192,6 +192,7 @@ const homeAlerts = (() => {
           <div class="stat-label">${escapeHtml(s.label)}</div><div class="stat-value">${escapeHtml(s.value)}</div>
           <div class="stat-trend">${escapeHtml(s.note)}</div></div>`).join("")}</div>
         ${c.finding ? `<p class="pg-finding">${escapeHtml(c.finding)}</p>` : ""}
+        ${(c.goals || []).length ? `<p class="pg-finding">${c.goals.map(g => `<span class="${g.met ? "good" : "bad"}">${escapeHtml(g.heading)}: goal ${g.met ? "met this game &check;" : "not met this game"}</span>`).join(" &middot; ")}</p>` : ""}
         <div class="welcome-actions"><button class="btn btn-primary" id="pg-open">Open match</button>
           <button class="btn" id="pg-dismiss">Dismiss</button></div></section>`);
     }

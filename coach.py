@@ -31,7 +31,7 @@ from moments import detect_moments, fmt_clock, insights
 from paths import LOCAL_DIR, bundled, models_dir, user_data
 
 # Bump when prompts, the dossier or the report format change, so old saved reports are redone
-COACH_VERSION = 3
+COACH_VERSION = 4
 
 SERVER_EXE = bundled("tools", "llama-server", "llama-server.exe")
 CTX_SIZE = 8192
@@ -553,6 +553,7 @@ def usual_stats(records, player_id, exclude=None):
 def rank_lines(row, mode, band):
     """Dossier lines saying how this game's stats rank among players of the player's chosen rank band."""
     import benchmarks
+    import training
     if not band or not benchmarks.table(mode, band):
         return None
     parts = []
@@ -562,8 +563,16 @@ def rank_lines(row, mode, band):
             parts.append(f"{label} {pct:.0f}")
     if not parts:
         return None
-    return [f"HOW THIS GAME RANKS AMONG {band.upper()} PLAYERS (percentile, 50th = typical, higher = better "
+    lines = [f"HOW THIS GAME RANKS AMONG {band.upper()} PLAYERS (percentile, 50th = typical, higher = better "
             f"for every stat, already adjusted for stats where lower is better):", ", ".join(parts)]
+    weak = sorted((benchmarks.percentile(mode, band, c, row[c]), c) for c, _ in DOSSIER_STATS
+                  if row.get(c) is not None and c not in benchmarks.STYLE_ONLY
+                  and benchmarks.percentile(mode, band, c, row[c]) is not None)
+    drills = [d for p, c in weak[:3] if p < 40 and (d := training.drill_line(c))]
+    if drills:
+        lines += ["SUGGESTED PRACTICE for the weakest of those (use these for focus_for_next_games, don't invent others):"]
+        lines += [f"- {d}" for d in drills]
+    return lines
 
 
 def analyse_for_coach(record, game, me_id, records, rank_band=None):

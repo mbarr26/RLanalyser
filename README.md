@@ -37,6 +37,19 @@ layered surfaces, one electric-violet accent and soft glows. It ships as a Windo
   and score/goals/saves/shots against your usual, and after three losses in a row it gently suggests
   a break. It disappears 6 hours after your last game.
 
+- **Weekly goals** – the app suggests up to two goals from your weakest stats for your rank (or the
+  stats slipping most lately if no rank is set), with a target halfway to that rank's median. You can
+  edit the target before pressing **Set goal**. Progress counts games played since you set it (at least
+  3 must count) and a goal lasts 7 days; **Collect** it when met or expired, and the home card keeps a
+  streak of goals met in a row. The post-game card says whether the game met each goal.
+- **How to practise** – each goal expands into drills and, where we have them, community training packs
+  with a **Copy code** button. The AI coach's "focus for your next games" now draws on the same drills
+  for your weakest stats instead of inventing its own.
+- **Share cards** – **Share** on the Home strip (your progress) and the match screen (that game) saves a
+  1200×630 PNG (and copies it to the clipboard when possible).
+- **Clips** – **Clip** on a key moment records the 8 seconds around it from the 2D replay and saves it as
+  a WebM video you can post.
+
 ### Match screen
 - **Replay (left)** – the full match as a top-down 2D playback with every car and the ball,
   boost and speed per player. It **starts playing as soon as you open the match**, with
@@ -139,7 +152,7 @@ directions:
 | `ui/app.js` | Page controller: view switching, home strip and replay tiles, match header/tables, the embedded replay, the progress page; talks to `pywebview.api` and handles the pushes from Python (`window.app.*`). |
 | `ui/coach.js` | The AI panel and the Findings / Key moments tabs: model download, the AI report (started automatically), and the chat. |
 | `ui/chart.js` | Canvas-drawn trend chart (per-game dots + rolling average, with hover). |
-| `ui/pitch.js` | Canvas-drawn replay viewer embedded in the match screen: playback, pitch geometry, cars and ball. |
+| `ui/pitch.js` | Canvas-drawn replay viewer embedded in the match screen: playback, pitch geometry, cars and ball, and `recordClip` (MediaRecorder on the canvas). |
 | `replay_library.py` | Lists replays in a folder, analyses them (`analyse`), caches results as JSON in `cache/`, `LibraryScanner` (background thread that loads/analyses a whole folder) and `ReplayWatcher` (polls the folder for replays saved while the app is open). |
 | `replay_parser.py` | Runs `tools/rrrocket.exe` on a replay and turns the header into a `ReplaySummary` (scores, players with stable `player_id`, goals, who recorded it). |
 | `frame_data.py` | Runs rrrocket with `--network-parse` and converts the network frames into pandas tables: `frames`, `ball` (with the game's last-touch team), `players` (with jump / double-jump / dodge states), `pickups` (`GameFrames`). Also holds the shared pitch constants. |
@@ -149,6 +162,10 @@ directions:
 | `dev_tools/build_benchmarks.py` | Developer-only: downloads public ballchasing.com replays by rank, runs `analyse()` on them and writes `benchmarks.json`. Not shipped. |
 | `postgame.py` | Post-game card and session logic: `headline_stats` (the stats that stood out in one game), `current_session` (tonight's record and losing-streak check). Pure measurement. |
 | `ui/welcome.js` | The first-run guide (`welcome`) and the Home cards for the game just played and tonight's session (`homeAlerts`). |
+| `goals.py` | Weekly goals: `suggestions`, `target_for`, `progress` (met / expired / active), `met_in_game`, `streak`. Stored in `config.json` under `"goals"` and `"goal_history"`. Pure logic. |
+| `training.py` | Drills and community training-pack codes per weak stat (`TRAINING`, `for_stat`, `drill_line`). Codes were checked against ggrecon.com and ginx.tv; see the file header. |
+| `ui/goals.js` | The goals card on Home: progress bars, suggestions, "how to practise". |
+| `ui/share.js` | Draws share-card PNGs on a canvas and saves them via `Api.save_file`. |
 | `progress.py` | Cross-replay stats for one player: `player_games` (one row per game), `comparison` (all / last 10 / wins / losses averages), `known_players`, `guess_me`. |
 | `pitch_viewer.py` | `build_track`: turns a match's frame data into the JSON-serialisable track `ui/pitch.js` plays back. |
 | `touches.py` | Ball touches (the ball's velocity jumps while a car is next to it), 50/50s, beaten-to-the-ball events, dribbles, half-flips / wave dashes, last man, and `skill_stats` (the Challenges / Mechanics / Defence columns). Also the shared per-frame table `live_table` and `find_runs`. Pure measurement, no AI. |

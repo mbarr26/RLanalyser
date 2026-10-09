@@ -718,3 +718,19 @@ table.stat-table tbody tr:hover td { background: rgba(255, 255, 255, 0.04); }
 .dots .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--surface-3); }
 .dots .dot.win { background: #4ade80; }
 .dots .dot.loss { background: var(--serious); }
+
+/* ---------- goals ---------- */
+.goal { padding: 12px 0; border-top: 1px solid var(--hairline); }
+.goal:first-of-type { margin-top: 10px; }
+.goal-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.goal-badge { margin-left: auto; font-size: 12px; font-weight: 600; }
+.goal-badge.good { color: #4ade80; }
+.goal-badge.bad { color: var(--serious); }
+.goal-bar { height: 6px; margin: 8px 0 6px; }
+.goal-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.goal-target { width: 72px; background: var(--surface-2); color: var(--ink); border: 1px solid var(--hairline-strong);
+  border-radius: 6px; padding: 3px 6px; font: inherit; }
+.goal-train { margin-top: 8px; font-size: 13px; color: var(--ink-secondary); }
+.goal-train summary { cursor: pointer; color: var(--accent-text); }
+.goal-train ul { margin: 6px 0; padding-left: 18px; line-height: 1.6; }
+.goal-train code { font-family: var(--font-mono); background: var(--surface-2); padding: 1px 6px; border-radius: 4px; color: var(--ink); }

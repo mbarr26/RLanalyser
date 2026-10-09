@@ -400,6 +400,43 @@ const PITCH = (() => {
       this.render();
     }
 
+    // Record [start, start + seconds) of the replay at normal speed and resolve with a data: URL of the WebM video.
+    async recordClip(start, seconds) {
+      if (typeof MediaRecorder === "undefined" || !this.canvas.captureStream) {
+        throw new Error("Clip recording isn't supported on this system");
+      }
+      const types = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+      const mimeType = types.find(t => MediaRecorder.isTypeSupported(t));
+      if (!mimeType) throw new Error("Clip recording isn't supported on this system");
+      const recorder = new MediaRecorder(this.canvas.captureStream(30), { mimeType, videoBitsPerSecond: 4000000 });
+      const chunks = [];
+      recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      const stopped = new Promise(resolve => { recorder.onstop = resolve; });
+
+      const wasPlaying = this.playing, speed = this.speedSel.value;
+      this.speedSel.value = "1x";
+      this.seek(start);
+      const end = Math.min(this.t + seconds, this.track.end);
+      recorder.start();
+      if (!this.playing) this.togglePlay();
+      await new Promise(resolve => {
+        const check = setInterval(() => {
+          if (this.t >= end || !this.playing) { clearInterval(check); resolve(); }
+        }, 100);
+      });
+      recorder.stop();
+      await stopped;
+      this.speedSel.value = speed;
+      if (this.playing && !wasPlaying) this.togglePlay();
+      const blob = new Blob(chunks, { type: "video/webm" });
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error("Couldn't read the recorded clip"));
+        reader.readAsDataURL(blob);
+      });
+    }
+
     tick() {
       const now = performance.now();
       if (this.playing && !this.dragging) {

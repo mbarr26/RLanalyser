@@ -107,6 +107,8 @@ function bindUi() {
   $("back-btn").onclick = goHome;
   document.querySelectorAll(".back-home").forEach(b => b.addEventListener("click", goHome));
   $("setup-btn").onclick = () => welcome.start();
+  $("share-home-btn").onclick = () => share.progress();
+  $("share-match-btn").onclick = () => share.match(state.currentPath);
   $("see-all-btn").onclick = () => { showView("progress"); reloadProgressLists(); };
   $("home-mode").addEventListener("change", loadHomeProgress);
   $("home-rank").addEventListener("change", async e => {
@@ -379,6 +381,23 @@ function watchMoment(time) {
   if (!state.viewer.playing) state.viewer.togglePlay();
 }
 
+// Record about 8 seconds of the replay around a moment and save it as a video the user can share.
+async function clipMoment(time, btn) {
+  if (!state.viewer) { $("status").textContent = "Wait for the replay to load first"; return; }
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = "Recording\u2026";
+  try {
+    const url = await state.viewer.recordClip(time - 5, 8);
+    const saved = await pywebview.api.save_file(`rl-clip-${Math.round(time)}s.webm`, url);
+    if (saved && saved.error) $("status").textContent = saved.error;
+    else if (saved) $("status").textContent = `Saved ${saved.path}`;
+  } catch (e) {
+    $("status").textContent = e.message || "Couldn't record a clip";
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
+}
+
 // ---------- home: progress strip ----------
 
 function renderModeSelects() {
@@ -396,6 +415,7 @@ function reloadHome() {
   renderModeSelects();
   loadHomeProgress();
   homeAlerts.loadSession();
+  goalsUi.load();
   lastRefresh = Date.now();
   homeDirty = false;
 }

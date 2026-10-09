@@ -17,8 +17,11 @@ from pathlib import Path
 import pandas as pd
 import webview
 
+import base64
+
 import benchmarks
 import coach
+import goals
 import updater
 from analysis import STAT_GROUPS
 from frame_data import load_game_frames
@@ -206,6 +209,28 @@ def is_onboarded():
     return bool(config.get("onboarded") or config.get("me") or config.get("replay_dir"))
 
 
+def stored_goals():
+    return load_config().get("goals", [])
+
+
+def main_mode(games):
+    """The mode the player has played most (None if no games)."""
+    return games["mode"].mode().iat[0] if len(games) else None
+
+
+def goals_payload(player_id):
+    """Active goals with their progress, suggestions for new ones, and the streak of goals met."""
+    games = player_games(list(RECORDS.values()), player_id)
+    active = [goals.progress(g, games) for g in stored_goals()]
+    mode = main_mode(games)
+    band = rank_for(mode) if mode else None
+    taken = [g["stat"] for g in stored_goals()]
+    ideas = goals.suggestions(games, mode, band, taken)[:goals.MAX_GOALS - len(active)] if len(games) >= 3 else []
+    return {"active": active, "suggestions": ideas, "mode": mode,
+            "streak": goals.streak(load_config().get("goal_history", [])), "stats": {
+                c: h for c, (h, _, _) in goals.GOAL_STATS.items()}}
+
+
 def rank_for(mode):
     """The rank band the player said they play at in this mode (None if not set)."""
     return load_config().get("ranks", {}).get(mode)
@@ -238,11 +263,13 @@ def postgame_card(record):
     mode = f"{s.team_size}v{s.team_size}"
     games = player_games(list(RECORDS.values()), me_id)
     before = games[games.path != record.path]
-    stats = headline_stats(game_row(me, record.players[me.name]), before, mode, rank_for(mode))
+    row = game_row(me, record.players[me.name])
+    stats = headline_stats(row, before, mode, rank_for(mode))
     mine, theirs = (s.team0_score, s.team1_score) if me.team == 0 else (s.team1_score, s.team0_score)
     return {
         "path": str(record.path), "result": "Win" if mine > theirs else "Loss" if mine < theirs else "Draw",
         "scoreLine": f"{mine}-{theirs}", "mapName": s.map_name, "mode": mode, "stats": stats, "finding": None,
+        "goals": goals.met_in_game(stored_goals(), row),
     }
 
 
@@ -356,6 +383,57 @@ class Api:
         save_config({**load_config(), "me": player_id})
         push("onMe", effective_me())
         return None
+
+    def get_goals(self, player_id):
+        return goals_payload(player_id) if player_id else {"active": [], "suggestions": [], "streak": 0, "stats": {}}
+
+    def accept_goal(self, player_id, stat, target):
+        """Start a goal on a stat, with the player's chosen target."""
+        if stat not in goals.GOAL_STATS or len(stored_goals()) >= goals.MAX_GOALS:
+            return goals_payload(player_id)
+        if any(g["stat"] == stat for g in stored_goals()):
+            return goals_payload(player_id)
+        games = player_games(list(RECORDS.values()), player_id)
+        recent = games.tail(10)
+        baseline = recent[stat].mean() if stat in recent else float("nan")
+        if pd.isna(baseline):
+            return goals_payload(player_id)
+        config = load_config()
+        config.setdefault("goals", []).append(goals.new_goal(stat, baseline, float(target), mode=main_mode(games)))
+        save_config(config)
+        return goals_payload(player_id)
+
+    def finish_goal(self, player_id, goal_id):
+        """Remove a goal (dismiss it, or collect it once it's met or expired). Met/expired ones go in the history."""
+        config = load_config()
+        games = player_games(list(RECORDS.values()), player_id)
+        keep = []
+        for g in config.get("goals", []):
+            if g["id"] != goal_id:
+                keep.append(g)
+                continue
+            status = goals.progress(g, games)["status"]
+            if status in ("met", "expired"):
+                config.setdefault("goal_history", []).append(
+                    {"stat": g["stat"], "met": status == "met", "date": g["started"]})
+        config["goals"] = keep
+        save_config(config)
+        return goals_payload(player_id)
+
+    def save_file(self, name, data_url):
+        """Ask where to save a file the page made (a share card PNG or a clip) and write it there."""
+        try:
+            raw = base64.b64decode(data_url.split(",", 1)[1])
+        except (IndexError, ValueError):
+            return {"error": "Nothing to save"}
+        kind = getattr(webview, "FileDialog", None)
+        dialog = kind.SAVE if kind else webview.SAVE_DIALOG
+        result = WINDOW.create_file_dialog(dialog, directory=str(Path.home() / "Pictures"), save_filename=name)
+        if not result:
+            return None
+        path = Path(result if isinstance(result, str) else result[0])
+        path.write_bytes(raw)
+        return {"path": str(path)}
 
     def finish_onboarding(self):
         save_config({**load_config(), "onboarded": True})

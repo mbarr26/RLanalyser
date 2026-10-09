@@ -200,7 +200,10 @@ const coachUi = (() => {
       title.appendChild(document.createTextNode(m.title));
       const watch = el("button", "btn", "Watch");
       watch.addEventListener("click", () => watchMoment(m.time));
-      head.append(title, watch);
+      const clip = el("button", "btn", "Clip");
+      clip.title = "Save the 8 seconds around this as a video";
+      clip.addEventListener("click", () => clipMoment(m.time, clip));
+      head.append(title, watch, clip);
       card.appendChild(head);
       card.appendChild(el("div", "coach-detail", m.detail));
       const ai = explained.get(m.id);

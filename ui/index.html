@@ -45,10 +45,15 @@
           <div class="strip-controls">
             <span class="field-label">Mode</span>
             <select id="home-mode" class="select" style="min-width:90px;"><option>All</option></select>
+            <span id="home-rank-wrap" hidden>
+              <span class="field-label">Your rank</span>
+              <select id="home-rank" class="select" style="min-width:150px;" title="Compare your stats with players of this rank"></select>
+            </span>
             <button id="see-all-btn" class="btn">See all stats &rarr;</button>
           </div>
         </div>
         <div class="strip-body">
+          <div id="home-rank-note" class="rank-note" hidden></div>
           <div id="home-cards" class="stat-cards"></div>
           <div class="card chart-card home-chart"><canvas id="home-chart"></canvas></div>
         </div>

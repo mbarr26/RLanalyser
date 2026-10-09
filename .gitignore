@@ -6,3 +6,4 @@ cache/
 build/
 dist/
 updates/
+benchmark_cache/

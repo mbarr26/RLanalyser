@@ -8,6 +8,9 @@ const state = {
   me: null,
   statGroups: {},
   progressStats: [],
+  rankBands: [],        // rank names, lowest first
+  rankModes: [],        // modes we have rank benchmark data for
+  ranks: {},            // mode -> the rank the player chose
   records: new Map(),   // path -> record payload
   order: [],            // paths, in list order (newest first)
   view: "home",
@@ -79,6 +82,9 @@ async function init() {
   state.me = meta.config.me;
   state.statGroups = meta.statGroups;
   state.progressStats = meta.progressStats;
+  state.rankBands = meta.rankBands || [];
+  state.rankModes = meta.rankModes || [];
+  state.ranks = meta.config.ranks || {};
   if (meta.version) $("app-version").textContent = "v" + meta.version;
   $("folder-label").textContent = meta.config.replayDir || "No folder selected";
   state.chart = new CHART.TrendChart($("trend-chart"));
@@ -101,6 +107,11 @@ function bindUi() {
   document.querySelectorAll(".back-home").forEach(b => b.addEventListener("click", goHome));
   $("see-all-btn").onclick = () => { showView("progress"); reloadProgressLists(); };
   $("home-mode").addEventListener("change", loadHomeProgress);
+  $("home-rank").addEventListener("change", async e => {
+    const mode = $("home-mode").value;
+    state.ranks = await pywebview.api.set_rank(mode, e.target.value || null);
+    loadHomeProgress();
+  });
 
   const grid = $("tile-grid");
   const openTile = e => {
@@ -395,9 +406,11 @@ async function loadHomeProgress() {
     return;
   }
   const mode = $("home-mode").value;
+  renderRankPicker(mode);
   const data = await pywebview.api.get_progress(state.me, mode === "All" ? null : mode);
   if (token !== homeToken) return;
   state.homeProgress = data;
+  renderRankNote(data.rank);
   const rate = (data.wins + data.losses) ? `  ·  ${Math.round(data.wins / (data.wins + data.losses) * 100)}% win rate` : "";
   const known = computeKnownPlayers().find(p => p.id === state.me);
   $("home-summary").innerHTML = data.count
@@ -405,6 +418,33 @@ async function loadHomeProgress() {
     : '<span class="sub">No games for this mode yet</span>';
   renderHomeCards(data);
   drawHomeChart();
+}
+
+// The "Your rank" dropdown only appears for a single mode that we have benchmark data for.
+function renderRankPicker(mode) {
+  const wrap = $("home-rank-wrap");
+  wrap.hidden = !state.rankModes.includes(mode);
+  if (wrap.hidden) return;
+  const chosen = state.ranks[mode] || "";
+  $("home-rank").innerHTML = `<option value="">Not set</option>` +
+    state.rankBands.map(b => `<option${b === chosen ? " selected" : ""}>${escapeHtml(b)}</option>`).join("");
+}
+
+function ordinalSuffix(n) {
+  const v = n % 100;
+  return (v >= 11 && v <= 13) ? "th" : ({ 1: "st", 2: "nd", 3: "rd" }[n % 10] || "th");
+}
+
+// One line above the cards: the biggest gap to the chosen rank, and the best thing to point at.
+function renderRankNote(rank) {
+  const note = $("home-rank-note");
+  note.hidden = !rank;
+  if (!rank) return;
+  const name = col => (statMeta(col) || [col, col])[1];
+  const weak = rank.weaknesses[0], strong = rank.strengths[0];
+  note.innerHTML = `Compared with typical <b>${escapeHtml(rank.band)}</b> players` +
+    (weak ? ` &middot; <span class="bad">weakest: ${escapeHtml(name(weak))}</span>` : "") +
+    (strong ? ` &middot; <span class="good">strongest: ${escapeHtml(name(strong))}</span>` : "");
 }
 
 function statMeta(col) {
@@ -465,9 +505,16 @@ function renderHomeCards(data) {
       trend = `${arrow}${fmtPy(fmt, Math.abs(diff))} vs avg ${fmtPy(fmt, all)}`;
       if (arrow) trendClass = (diff > 0) === higherIsBetter ? " good" : " bad";
     }
+    const ranked = data.rank && data.rank.rows.find(r => r.stat === col);
+    const rankLine = ranked
+      ? `<div class="stat-rank" title="Where your last 10 games sit among ${escapeHtml(data.rank.band)} players">
+           <span class="rank-bar"><i style="width:${ranked.percentile}%"></i></span>
+           ${ranked.percentile}${ordinalSuffix(ranked.percentile)} pctl &middot; plays like ${escapeHtml(ranked.playsLike || "?")}</div>`
+      : "";
     card.innerHTML = `<div class="stat-label">${escapeHtml(label)}</div>
       <div class="stat-value">${fmtPy(fmt, shown)}</div>
       <div class="stat-trend${trendClass}">${escapeHtml(trend)}</div>
+      ${rankLine}
       ${sparkline(values, col)}`;
     card.title = `Last 10 games${higherIsBetter ? "" : " (lower is better)"} - click to chart`;
     if (shown !== null && shown !== undefined) {
@@ -551,7 +598,7 @@ async function loadProgress() {
   const data = await pywebview.api.get_progress(state.viewing, modeSel === "All" ? null : modeSel);
   state.lastProgress = data;
   renderProgressSummary(data);
-  renderCompare(data.compare);
+  renderCompare(data.compare, state.viewing === state.me ? data.rank : null);
   renderGamesTable(data.games);
   drawChart();
 }
@@ -563,15 +610,18 @@ function renderProgressSummary(data) {
     : '<span class="sub">No games for this player/mode yet</span>';
 }
 
-function renderCompare(compare) {
+function renderCompare(compare, rank) {
+  const rankCols = rank ? [`${rank.band} median`, "Your percentile"] : [];
   document.querySelector("#compare-table thead tr").innerHTML =
-    "<th>Stat</th>" + compare.headings.map(h => `<th>${escapeHtml(h)}</th>`).join("");
+    "<th>Stat</th>" + [...compare.headings, ...rankCols].map(h => `<th>${escapeHtml(h)}</th>`).join("");
   const tbody = document.querySelector("#compare-table tbody");
   tbody.innerHTML = "";
   for (const [col, heading, values] of compare.rows) {
     const tr = document.createElement("tr");
     tr.className = col === state.chartStat ? "selected" : "";
-    tr.innerHTML = `<td>${escapeHtml(heading)}</td>` + values.map(v => `<td>${escapeHtml(v)}</td>`).join("");
+    const r = rank && rank.rows.find(x => x.stat === col);
+    const extra = rank ? [r ? fmtPy(statMeta(col)[2], r.median) : "-", r ? `${r.percentile}${ordinalSuffix(r.percentile)}` : "-"] : [];
+    tr.innerHTML = `<td>${escapeHtml(heading)}</td>` + [...values, ...extra].map(v => `<td>${escapeHtml(v)}</td>`).join("");
     tr.addEventListener("click", () => {
       state.chartStat = col;
       tbody.querySelectorAll("tr").forEach(r => r.classList.remove("selected"));

@@ -17,13 +17,14 @@ from pathlib import Path
 import pandas as pd
 import webview
 
+import benchmarks
 import coach
 import updater
 from analysis import STAT_GROUPS
 from frame_data import load_game_frames
 from paths import bundled, user_data
 from pitch_viewer import build_track
-from progress import PROGRESS_STATS, comparison, guess_me, player_games
+from progress import PROGRESS_STATS, RECENT_GAMES, comparison, guess_me, player_games
 from replay_library import LibraryScanner, analyse, list_replays
 from replay_parser import ReplayParseError
 from version import APP_VERSION
@@ -192,6 +193,11 @@ def start_scan_and_list():
     return [str(p) for p in paths]
 
 
+def rank_for(mode):
+    """The rank band the player said they play at in this mode (None if not set)."""
+    return load_config().get("ranks", {}).get(mode)
+
+
 def progress_payload(player_id, mode):
     games = player_games(list(RECORDS.values()), player_id, mode or None)
     headings, rows = comparison(games)
@@ -208,7 +214,10 @@ def progress_payload(player_id, mode):
         }
         for _, g in games.iloc[::-1].iterrows()
     ]
+    band = rank_for(mode) if mode else None
+    rank = benchmarks.profile(games.tail(RECENT_GAMES), mode, band, PROGRESS_STATS) if band else None
     return {
+        "rank": rank,
         "count": int(len(games)),
         "wins": wins,
         "losses": losses,
@@ -226,7 +235,10 @@ class Api:
         return {
             "version": APP_VERSION,
             "updatesConfigured": bool(update_source()),
-            "config": {"replayDir": str(REPLAY_DIR) if REPLAY_DIR else None, "me": CHOSEN_ME},
+            "config": {"replayDir": str(REPLAY_DIR) if REPLAY_DIR else None, "me": CHOSEN_ME,
+                       "ranks": load_config().get("ranks", {})},
+            "rankBands": benchmarks.BANDS,
+            "rankModes": benchmarks.modes(),
             "statGroups": {group: [[c, h, f] for c, h, f in stats] for group, stats in STAT_GROUPS.items()},
             "progressStats": [[c, h, f] for c, h, f in PROGRESS_STATS],
         }
@@ -271,6 +283,17 @@ class Api:
         save_config({**load_config(), "me": player_id})
         push("onMe", effective_me())
         return None
+
+    def set_rank(self, mode, band):
+        """Remember which rank band the player is in for a mode (None clears it)."""
+        config = load_config()
+        ranks = config.setdefault("ranks", {})
+        if band in benchmarks.BANDS:
+            ranks[mode] = band
+        else:
+            ranks.pop(mode, None)
+        save_config(config)
+        return ranks
 
     def get_progress(self, player_id, mode):
         return progress_payload(player_id, mode)
@@ -333,7 +356,8 @@ class Api:
             return {"error": "This match hasn't been analysed yet."}
         try:
             game = load_game_frames(path)
-            facts = coach.analyse_for_coach(record, game, effective_me(), list(RECORDS.values()))
+            mode = f"{record.summary.team_size}v{record.summary.team_size}"
+            facts = coach.analyse_for_coach(record, game, effective_me(), list(RECORDS.values()), rank_for(mode))
         except coach.CoachError as e:
             return {"error": str(e)}
         except Exception as e:  # shown to the user rather than lost

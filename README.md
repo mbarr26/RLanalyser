@@ -18,6 +18,12 @@ layered surfaces, one electric-violet accent and soft glows. It ships as a Windo
   win/loss edge, map, mode, date and your goals/assists/saves/shots. Tiles stay grey until
   the replay has been analysed. Click one to open the match screen.
 
+- **Rank benchmarks** – pick **Your rank** (shown when one mode is selected) and every stat card shows
+  where your last 10 games sit among players of that rank ("62nd pctl · plays like Gold"), with a line
+  naming your weakest and strongest stat for your rank. The full progress page gets a rank-median
+  and percentile column, and the AI coach is told how the game ranks so its advice is rank-relative.
+  Needs `benchmarks.json` (see [Rank benchmarks](#rank-benchmarks)); without it the picker is hidden.
+
 ### Match screen
 - **Replay (left)** – the full match as a top-down 2D playback with every car and the ball,
   boost and speed per player. It **starts playing as soon as you open the match**, with
@@ -125,6 +131,9 @@ directions:
 | `replay_parser.py` | Runs `tools/rrrocket.exe` on a replay and turns the header into a `ReplaySummary` (scores, players with stable `player_id`, goals, who recorded it). |
 | `frame_data.py` | Runs rrrocket with `--network-parse` and converts the network frames into pandas tables: `frames`, `ball` (with the game's last-touch team), `players` (with jump / double-jump / dodge states), `pickups` (`GameFrames`). Also holds the shared pitch constants. |
 | `analysis.py` | Computes per-player stats (`player_stats`) and match stats (`team_stats`) from `GameFrames`. `STAT_GROUPS` defines which stats appear in which tab (sent to the page so it can build the tables generically). |
+| `benchmarks.py` | Rank benchmarks: loads `benchmarks.json`, `percentile`, `closest_band`, and `profile` (your recent form vs a rank, with strengths and weaknesses). Pure measurement. |
+| `benchmarks.json` | Per mode and rank band, the 10/25/50/75/90th percentile of every stat. Built by `dev_tools/build_benchmarks.py`; bundled into the installer if present. |
+| `dev_tools/build_benchmarks.py` | Developer-only: downloads public ballchasing.com replays by rank, runs `analyse()` on them and writes `benchmarks.json`. Not shipped. |
 | `progress.py` | Cross-replay stats for one player: `player_games` (one row per game), `comparison` (all / last 10 / wins / losses averages), `known_players`, `guess_me`. |
 | `pitch_viewer.py` | `build_track`: turns a match's frame data into the JSON-serialisable track `ui/pitch.js` plays back. |
 | `touches.py` | Ball touches (the ball's velocity jumps while a car is next to it), 50/50s, beaten-to-the-ball events, dribbles, half-flips / wave dashes, last man, and `skill_stats` (the Challenges / Mechanics / Defence columns). Also the shared per-frame table `live_table` and `find_runs`. Pure measurement, no AI. |
@@ -145,10 +154,25 @@ directions:
 | `cache/` | Per-replay analysis results. Safe to delete (it's rebuilt). Not committed to git. |
 
 **If you change how stats are calculated**, bump `CACHE_VERSION` in
-`replay_library.py` so every replay is re-analysed with the new code.
+`replay_library.py` so every replay is re-analysed with the new code, then rebuild `benchmarks.json`.
 
 Coordinates are Unreal units: blue (team 0) defends the −y goal, orange (team 1) the +y
 goal; the pitch is x ∈ [−4096, 4096], y ∈ [−5120, 5120].
+
+## Rank benchmarks
+
+The tables must come from our own analysis code (ballchasing's stat numbers are measured differently),
+so they are built by analysing public replays of each rank:
+
+```
+set BALLCHASING_TOKEN=<free token from ballchasing.com -> Upload -> API token>
+python dev_tools/build_benchmarks.py --mode 2v2 --per-band 60      # repeat --mode / --band as needed
+```
+
+Downloads are kept in `benchmark_cache/` (not committed) so an interrupted run resumes, and
+`benchmarks.json` is saved after every band. **Rebuild whenever `CACHE_VERSION` changes**, because the
+stats then mean something different. Commit `benchmarks.json` so releases include it. Your chosen rank
+per mode is stored in `config.json` under `"ranks"`.
 
 ## Known issues
 

@@ -3,6 +3,8 @@
 # One folder rather than one file: the bundled AI engine is ~150 MB, and a single exe would
 # unpack all of it on every launch.
 
+import os
+
 from PyInstaller.utils.hooks import collect_submodules
 
 hiddenimports = collect_submodules("webview.platforms") + ["clr_loader", "pythonnet"]
@@ -14,7 +16,7 @@ a = Analysis(
     datas=[
         ("ui", "ui"),
         ("tools", "tools"),       # rrrocket.exe, llama-server/ (+ licences)
-    ],
+    ] + ([("benchmarks.json", ".")] if os.path.exists("benchmarks.json") else []),   # rank tables (dev_tools/build_benchmarks.py)
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],

@@ -31,7 +31,7 @@ from moments import detect_moments, fmt_clock, insights
 from paths import LOCAL_DIR, bundled, models_dir, user_data
 
 # Bump when prompts, the dossier or the report format change, so old saved reports are redone
-COACH_VERSION = 2
+COACH_VERSION = 3
 
 SERVER_EXE = bundled("tools", "llama-server", "llama-server.exe")
 CTX_SIZE = 8192
@@ -302,6 +302,7 @@ You are given measured facts about the match: stats, a list of key moments (each
 - Refer to key moments by their id.
 - Only call something a strength or weakness if the RULE-BASED FINDINGS or KEY MOMENTS say so, or if it clearly differs from the player's USUAL AVERAGES. Never judge a raw stat on its own.
 - How to read the stats: "% behind ball" higher = better defensive positioning; "% at 0 boost" lower = better; "% closest to ball on team" is just involvement, not good or bad; "avg dist to ball" is context only.
+- If a "HOW THIS GAME RANKS" line is given, it compares the player with others of their rank: about 50th is normal for their rank, 25th or lower is a real weakness, 75th or higher a real strength. Prefer it over raw numbers.
 - Challenge and skill stats: "50/50 win %" higher = better; "times beaten after committing" and "beaten as last man" lower = better; "% shadowing" higher = better defending; "touches", "% possession", "% last man", "aerial touches" and "flip touches" describe style and involvement, so only judge them against the player's USUAL AVERAGES or a key moment."""
 
 REPORT_TASK = """Write the match analysis for {me} as JSON.
@@ -311,7 +312,7 @@ REPORT_TASK = """Write the match analysis for {me} as JSON.
 - focus_for_next_games: 2-3 specific things to practise."""
 
 
-def build_dossier(record, moments, me_name, usual=None, rule_insights=None):
+def build_dossier(record, moments, me_name, usual=None, rule_insights=None, rank_lines=None):
     """The facts about one match as compact text for the model (roughly 1.5-3K tokens)."""
     s = record.summary
     mins, secs = divmod(int(s.seconds_played), 60)
@@ -336,6 +337,8 @@ def build_dossier(record, moments, me_name, usual=None, rule_insights=None):
     if usual:
         pairs = ", ".join(f"{label} {usual[col]:.0f}" for col, label in DOSSIER_STATS if usual.get(col) is not None)
         lines += ["", f"{me_name}'S USUAL AVERAGES over previous games: {pairs}"]
+    if rank_lines:
+        lines += ["", *rank_lines]
     lines += ["", "KEY MOMENTS (times are the game clock, counting down):"]
     for m in moments:
         clock = f"{m['clock_text']} " if m["clock_text"] else ""
@@ -547,7 +550,23 @@ def usual_stats(records, player_id, exclude=None):
     return {c: float(games[c].mean()) for c in cols if games[c].notna().any()}
 
 
-def analyse_for_coach(record, game, me_id, records):
+def rank_lines(row, mode, band):
+    """Dossier lines saying how this game's stats rank among players of the player's chosen rank band."""
+    import benchmarks
+    if not band or not benchmarks.table(mode, band):
+        return None
+    parts = []
+    for col, label in DOSSIER_STATS:
+        pct = benchmarks.percentile(mode, band, col, row.get(col)) if row.get(col) is not None else None
+        if pct is not None and col not in benchmarks.STYLE_ONLY:
+            parts.append(f"{label} {pct:.0f}")
+    if not parts:
+        return None
+    return [f"HOW THIS GAME RANKS AMONG {band.upper()} PLAYERS (percentile, 50th = typical, higher = better "
+            f"for every stat, already adjusted for stats where lower is better):", ", ".join(parts)]
+
+
+def analyse_for_coach(record, game, me_id, records, rank_band=None):
     """Moments, rule-based insights and the dossier for one analysed replay (no AI involved)."""
     me = record.summary.player(me_id) if me_id else None
     if me is None or me.name not in (record.players or {}):
@@ -555,7 +574,9 @@ def analyse_for_coach(record, game, me_id, records):
     moments = detect_moments(game, record.summary)
     usual = usual_stats(records, me_id, exclude=record.path)
     rule_insights = insights(record.summary, record.players, moments, me.name, usual)
-    dossier = build_dossier(record, moments, me.name, usual, rule_insights)
+    mode = f"{record.summary.team_size}v{record.summary.team_size}"
+    dossier = build_dossier(record, moments, me.name, usual, rule_insights,
+                            rank_lines(record.players[me.name], mode, rank_band))
     return {"me": me.name, "team": me.team, "moments": moments, "insights": rule_insights,
             "dossier": dossier, "usual": usual}
 

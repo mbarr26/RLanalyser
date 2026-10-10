@@ -66,7 +66,9 @@ layered surfaces, one electric-violet accent and soft glows. It ships as a Windo
   - **Key moments** – goals (with where the defenders were 3 seconds earlier), "nobody back"
     spells, double commits, long stretches out of boost, 50/50s lost just before a goal, last
     men beaten just before a goal, plus good plays (aerial goals, big clears), each with the
-    game clock and the AI's advice. **Watch** jumps the replay above to a few seconds before it.
+    game clock and the AI's advice. **Watch** jumps the replay above to a few seconds before it, and
+    👍 / 👎 record whether the moment was detected correctly (saved to `labels.jsonl`, used to tune the rules
+    with `python dev_tools/label_report.py`).
   - **Findings** – short rule-based notes about *you* in this game, compared with your usual
     averages ("you were ahead of the ball on 2 of the 3 goals you conceded"). No AI needed.
   - **Movement** – average speed, % supersonic / boost speed / slow, % on the ground / low
@@ -184,6 +186,8 @@ directions:
 | `paths.py` | Where files live: `bundled()` for shipped files, `user_data()` for config/cache, `models_dir()` for AI models. Works from source and from a packaged build. |
 | `tools/rrrocket.exe` | Third-party [rrrocket](https://github.com/nickbabcock/rrrocket) replay decoder used by the parsers (MIT, see `tools/LICENSE-rrrocket`). |
 | `tools/llama-server/` | Third-party [llama.cpp](https://github.com/ggml-org/llama.cpp) server (build b11435, Windows Vulkan: NVIDIA/AMD/Intel GPUs with CPU fallback; MIT, see `LICENSE-llama.cpp`). Runs the AI model. |
+| `labels.py` | "Was this right?" votes (`labels.jsonl` in the data folder): `add`, `load` (latest vote per event), `precision` per event kind. |
+| `dev_tools/label_report.py` | Developer-only: precision per event kind from `labels.jsonl`, and the replay/time of every "wrong" vote to re-watch. |
 | `tests/` | pytest suite. Synthetic mini-matches (`conftest.make_game`) test touches, 50/50s, beaten, dribbles, key moments and findings; `test_goals.py`, `test_benchmarks.py` and `test_postgame.py` cover the pure logic; `test_real_replays.py` sanity-checks real replays from your replay folder (or `RLA_TEST_REPLAYS`) and is skipped if there are none. |
 | `config.json` | Local settings: replay folder and which player is you. Not committed to git. |
 | `cache/` | Per-replay analysis results. Safe to delete (it's rebuilt). Not committed to git. |

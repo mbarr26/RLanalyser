@@ -7,3 +7,4 @@ build/
 dist/
 updates/
 benchmark_cache/
+validation_report.md

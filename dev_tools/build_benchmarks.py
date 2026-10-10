@@ -11,68 +11,19 @@ Re-run whenever replay_library.CACHE_VERSION changes, because the stats then mea
 
 import argparse
 import json
-import os
 import sys
-import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import benchmarks  # noqa: E402
+from ballchasing import PLAYLISTS, RANK_IDS, download, replay_ids, token_or_exit  # noqa: E402
 from progress import PROGRESS_STATS  # noqa: E402
 from replay_library import CACHE_VERSION, analyse  # noqa: E402
-
-API = "https://ballchasing.com/api"
-CACHE = ROOT / "benchmark_cache"
-PLAYLISTS = {"1v1": "ranked-duels", "2v2": "ranked-doubles", "3v3": "ranked-standard"}
-# band name -> (min-rank, max-rank) as ballchasing spells them
-RANK_IDS = {
-    "Bronze": ("bronze-1", "bronze-3"), "Silver": ("silver-1", "silver-3"), "Gold": ("gold-1", "gold-3"),
-    "Platinum": ("platinum-1", "platinum-3"), "Diamond": ("diamond-1", "diamond-3"),
-    "Champion": ("champion-1", "champion-3"), "Grand Champion": ("grand-champion-1", "grand-champion-3"),
-    "Supersonic Legend": ("supersonic-legend", "supersonic-legend"),
-}
-PAUSE = 1.0     # seconds between API calls (free tier is a few requests per second at most)
-
-
-def call(path, token, binary=False):
-    request = urllib.request.Request(path if path.startswith("http") else API + path,
-                                     headers={"Authorization": token})
-    for attempt in range(5):
-        try:
-            with urllib.request.urlopen(request, timeout=60) as response:
-                data = response.read()
-            time.sleep(PAUSE)
-            return data if binary else json.loads(data)
-        except urllib.error.HTTPError as e:
-            if e.code == 429:                       # rate limited: wait and retry
-                time.sleep(10 * (attempt + 1))
-                continue
-            raise
-    raise RuntimeError("ballchasing kept rate-limiting us; try again later")
-
-
-def replay_ids(token, mode, band, want):
-    low, high = RANK_IDS[band]
-    ids, url = [], (f"/replays?playlist={PLAYLISTS[mode]}&min-rank={low}&max-rank={high}"
-                    f"&count=200&sort-by=created&sort-dir=desc")
-    while url and len(ids) < want:
-        page = call(url, token)
-        ids += [r["id"] for r in page.get("list", [])]
-        url = page.get("next")
-    return ids[:want]
-
-
-def download(token, replay_id):
-    path = CACHE / f"{replay_id}.replay"
-    if not path.exists():
-        path.write_bytes(call(f"/replays/{replay_id}/file", token, binary=True))
-    return path
 
 
 def collect(token, mode, band, want):
@@ -109,10 +60,7 @@ def main():
     parser.add_argument("--band", action="append", choices=RANK_IDS, help="repeatable; default all bands")
     args = parser.parse_args()
 
-    token = os.environ.get("BALLCHASING_TOKEN")
-    if not token:
-        sys.exit("Set BALLCHASING_TOKEN first (ballchasing.com -> Upload -> API token).")
-    CACHE.mkdir(exist_ok=True)
+    token = token_or_exit()
 
     out = ROOT / "benchmarks.json"
     try:

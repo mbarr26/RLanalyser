@@ -159,6 +159,8 @@ directions:
 | `analysis.py` | Computes per-player stats (`player_stats`) and match stats (`team_stats`) from `GameFrames`. `STAT_GROUPS` defines which stats appear in which tab (sent to the page so it can build the tables generically). |
 | `benchmarks.py` | Rank benchmarks: loads `benchmarks.json`, `percentile`, `closest_band`, and `profile` (your recent form vs a rank, with strengths and weaknesses). Pure measurement. |
 | `benchmarks.json` | Per mode and rank band, the 10/25/50/75/90th percentile of every stat. Built by `dev_tools/build_benchmarks.py`; bundled into the installer if present. |
+| `dev_tools/ballchasing.py` | Developer-only: shared ballchasing.com helpers (API calls with rate-limit retry, rank bands, replay and stats download cache in `benchmark_cache/`). |
+| `dev_tools/validate.py` | Developer-only: checks our stats against ballchasing's for the same replays (correlation, bias, worst outliers), plus header checks that need no token (`--local`: was the scorer the last toucher, do touches cover shots+saves, plausible touches/min) and `--benchmarks` (do medians rise with rank). Writes `validation_report.md`. |
 | `dev_tools/build_benchmarks.py` | Developer-only: downloads public ballchasing.com replays by rank, runs `analyse()` on them and writes `benchmarks.json`. Not shipped. |
 | `postgame.py` | Post-game card and session logic: `headline_stats` (the stats that stood out in one game), `current_session` (tonight's record and losing-streak check). Pure measurement. |
 | `ui/welcome.js` | The first-run guide (`welcome`) and the Home cards for the game just played and tonight's session (`homeAlerts`). |
@@ -191,6 +193,17 @@ directions:
 
 Coordinates are Unreal units: blue (team 0) defends the −y goal, orange (team 1) the +y
 goal; the pitch is x ∈ [−4096, 4096], y ∈ [−5120, 5120].
+
+## Validating the numbers
+
+```
+python dev_tools/validate.py --local                    # no token: header checks on your own replay folder
+python dev_tools/validate.py --per-band 10              # with BALLCHASING_TOKEN: also compares with ballchasing
+python dev_tools/validate.py --benchmarks               # after building benchmarks.json
+```
+Targets: correlation of at least 0.9 with ballchasing on the movement / positioning / boost stats, and the
+scorer being the last toucher on as many goals as possible (73 of 88 on the first 14 local replays).
+`python -m pytest tests` runs the unit tests (`tests/test_validate.py` covers this tool's maths).
 
 ## Rank benchmarks
 

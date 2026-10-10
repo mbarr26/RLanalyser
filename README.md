@@ -163,6 +163,7 @@ directions:
 | `benchmarks.json` | Per mode and rank band, the 10/25/50/75/90th percentile of every stat. Built by `dev_tools/build_benchmarks.py`; bundled into the installer if present. |
 | `dev_tools/ballchasing.py` | Developer-only: shared ballchasing.com helpers (API calls with rate-limit retry, rank bands, replay and stats download cache in `benchmark_cache/`). |
 | `dev_tools/validate.py` | Developer-only: checks our stats against ballchasing's for the same replays (correlation, bias, worst outliers), plus header checks that need no token (`--local`: was the scorer the last toucher, do touches cover shots+saves, plausible touches/min) and `--benchmarks` (do medians rise with rank). Writes `validation_report.md`. |
+| `dev_tools/coach_eval.py` | Developer-only: runs the AI coach on real replays and checks each report (valid shape, no numbers or game clocks that aren't in the dossier, no padded strengths, time taken). Writes `coach_eval_report.md`. |
 | `dev_tools/build_benchmarks.py` | Developer-only: downloads public ballchasing.com replays by rank, runs `analyse()` on them and writes `benchmarks.json`. Not shipped. |
 | `postgame.py` | Post-game card and session logic: `headline_stats` (the stats that stood out in one game), `current_session` (tonight's record and losing-streak check). Pure measurement. |
 | `ui/welcome.js` | The first-run guide (`welcome`) and the Home cards for the game just played and tonight's session (`homeAlerts`). |
@@ -244,10 +245,12 @@ per mode is stored in `config.json` under `"ranks"`.
   toucher on 26 of 34 goals (the rest are mostly deflections off a defender or shots longer
   than 4 s), and touches came out at roughly 6-9 per player per minute. Treat half-flips and
   wave dashes as best-effort; "times beaten" looks high and may need a stricter rule.
-- The AI coach has only been tested against a synthetic match so far (no real replays were
-  available during development): the Lite model's report and chat both worked end to end. The
-  key-moment rules are first-draft thresholds (constants at the top of `moments.py`) that need
-  tuning against real games.
+- The AI coach has been run on 5 real replays with the Lite model (`dev_tools/coach_eval.py`): about 10-20 s a
+  report on a GPU, and no invented numbers or game clocks. Before the dossier labelled each moment ("YOUR TEAM
+  CONCEDED", "MISTAKE BY YOUR TEAM"...) and each finding (GOOD/BAD), it listed mistakes as strengths and called
+  conceded goals "scored"; with the labels 4 of 5 reports pass the automatic checks (the fifth is a borderline
+  false alarm) and wording slips are rarer but not gone. The key-moment rules are first-draft thresholds
+  (constants at the top of `moments.py`); use the 👍 / 👎 buttons to collect votes for tuning them.
 - On a PC without a usable GPU the model runs on the CPU: about 7 words/second on a 10-thread
   CPU, so the AI analysis takes around 2 minutes and chat answers about a minute. The findings and
   key moments are instant either way. The Lite model sometimes pads its strengths or misreads a

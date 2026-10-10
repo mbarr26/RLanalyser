@@ -31,7 +31,7 @@ from moments import detect_moments, fmt_clock, insights
 from paths import LOCAL_DIR, bundled, models_dir, user_data
 
 # Bump when prompts, the dossier or the report format change, so old saved reports are redone
-COACH_VERSION = 4
+COACH_VERSION = 5
 
 SERVER_EXE = bundled("tools", "llama-server", "llama-server.exe")
 CTX_SIZE = 8192
@@ -293,6 +293,21 @@ DOSSIER_STATS = [
     ("pct_shadowing", "% shadowing"), ("pct_last_man", "% last man"), ("last_man_beaten", "beaten as last man"),
 ]
 TEAM = {0: "Blue", 1: "Orange"}
+GOOD_PLAYS = {"aerial_goal", "clear"}
+
+
+def moment_label(moment, my_team):
+    """Who a key moment is about and whether it is good or bad for the player's team, in capitals.
+
+    The small model kept mixing these up (calling a conceded goal "scored", a beaten last man a "success"),
+    so the roles are spelled out in the data instead of being left to it.
+    """
+    mine = moment["team"] == my_team
+    if moment["type"] == "goal":
+        return "YOUR TEAM SCORED" if mine else "YOUR TEAM CONCEDED"
+    if moment["type"] in GOOD_PLAYS:
+        return "GOOD PLAY BY YOUR TEAM" if mine else "GOOD PLAY BY THE OPPONENTS"
+    return "MISTAKE BY YOUR TEAM" if mine else "MISTAKE BY THE OPPONENTS"
 
 SYSTEM_PROMPT = """You are a friendly, honest Rocket League coach. You analyse one match for the player named {me}, who is on the {team} team.
 
@@ -300,6 +315,8 @@ You are given measured facts about the match: stats, a list of key moments (each
 - Use ONLY the facts you are given. Never invent times, scores, stats, players or events. If something isn't in the data, say you can't tell.
 - Talk to the player as "you". Be specific and brief: short sentences, concrete advice (rotation, boost management, challenging, shadow defending, positioning).
 - Refer to key moments by their id.
+- Every key moment says whose it is: "YOUR TEAM CONCEDED" is a goal against the player's team, "MISTAKE BY YOUR TEAM" is a mistake to learn from, "MISTAKE BY THE OPPONENTS" is not the player's fault. Never describe a mistake as a success, and never say the player scored when the label says conceded.
+- Findings marked BAD belong under weaknesses and GOOD under strengths, never the other way round.
 - Only call something a strength or weakness if the RULE-BASED FINDINGS or KEY MOMENTS say so, or if it clearly differs from the player's USUAL AVERAGES. Never judge a raw stat on its own.
 - How to read the stats: "% behind ball" higher = better defensive positioning; "% at 0 boost" lower = better; "% closest to ball on team" is just involvement, not good or bad; "avg dist to ball" is context only.
 - If a "HOW THIS GAME RANKS" line is given, it compares the player with others of their rank: about 50th is normal for their rank, 25th or lower is a real weakness, 75th or higher a real strength. Prefer it over raw numbers.
@@ -339,14 +356,16 @@ def build_dossier(record, moments, me_name, usual=None, rule_insights=None, rank
         lines += ["", f"{me_name}'S USUAL AVERAGES over previous games: {pairs}"]
     if rank_lines:
         lines += ["", *rank_lines]
-    lines += ["", "KEY MOMENTS (times are the game clock, counting down):"]
+    my_team = next((p.team for p in s.players if p.name == me_name), 0)
+    lines += ["", f"KEY MOMENTS (times are the game clock, counting down; {me_name} is on the {TEAM[my_team]} team):"]
     for m in moments:
         clock = f"{m['clock_text']} " if m["clock_text"] else ""
-        lines.append(f"[{m['id']}] {clock}{m['title']} - {m['detail']}")
+        lines.append(f"[{m['id']}] {clock}({moment_label(m, my_team)}) {m['title']} - {m['detail']}")
     if not moments:
         lines.append("(none detected)")
     if rule_insights:
-        lines += ["", "RULE-BASED FINDINGS ABOUT THE PLAYER:"] + [f"- {i['text']}" for i in rule_insights]
+        lines += ["", "RULE-BASED FINDINGS ABOUT THE PLAYER (GOOD = a strength, BAD = a weakness):"]
+        lines += [f"- [{i['kind'].upper()}] {i['text']}" for i in rule_insights]
     return "\n".join(lines)
 
 

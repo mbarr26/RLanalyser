@@ -8,3 +8,4 @@ dist/
 updates/
 benchmark_cache/
 validation_report.md
+coach_eval_report.md

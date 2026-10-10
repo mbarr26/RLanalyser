@@ -182,6 +182,7 @@ directions:
 | `paths.py` | Where files live: `bundled()` for shipped files, `user_data()` for config/cache, `models_dir()` for AI models. Works from source and from a packaged build. |
 | `tools/rrrocket.exe` | Third-party [rrrocket](https://github.com/nickbabcock/rrrocket) replay decoder used by the parsers (MIT, see `tools/LICENSE-rrrocket`). |
 | `tools/llama-server/` | Third-party [llama.cpp](https://github.com/ggml-org/llama.cpp) server (build b11435, Windows Vulkan: NVIDIA/AMD/Intel GPUs with CPU fallback; MIT, see `LICENSE-llama.cpp`). Runs the AI model. |
+| `tests/` | pytest suite. Synthetic mini-matches (`conftest.make_game`) test touches, 50/50s, beaten, dribbles, key moments and findings; `test_goals.py`, `test_benchmarks.py` and `test_postgame.py` cover the pure logic; `test_real_replays.py` sanity-checks real replays from your replay folder (or `RLA_TEST_REPLAYS`) and is skipped if there are none. |
 | `config.json` | Local settings: replay folder and which player is you. Not committed to git. |
 | `cache/` | Per-replay analysis results. Safe to delete (it's rebuilt). Not committed to git. |
 
@@ -208,6 +209,9 @@ per mode is stored in `config.json` under `"ranks"`.
 
 ## Known issues
 
+- **Censored names:** Rocket League's profanity filter shows some names as `******` in the replay's frame
+  data while the header has the real name, so that player's frame stats are filed under `******` and don't
+  match the scoreboard (caught by `test_real_replays.py`, currently marked as an expected failure).
 - Replays from a brand-new Rocket League update can fail frame analysis until rrrocket
   learns the new replay data (the Season 24 update added `TAGame.PRI_TA:PlayerStatus`,
   which rrrocket v0.11.5 couldn't decode). Their scoreboard still shows; frame stats
@@ -254,6 +258,7 @@ per mode is stored in `config.json` under `"ranks"`.
 - Python 3.10+
 - `pandas`, `numpy` and `pywebview` (`pip install pandas numpy pywebview`); no other
   UI toolkit needed
+- To run the tests: `pip install pytest`, then `python -m pytest tests`
 
 ## Running
 

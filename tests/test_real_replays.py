@@ -57,8 +57,6 @@ def test_thirds_add_up(analysed):
     assert ((total - 100).abs() < 1).all()
 
 
-@pytest.mark.xfail(strict=False, reason="Rocket League masks censored names as '******' in the network data, so "
-                                         "that player's frame stats don't match the header name (known bug)")
 def test_header_players_all_have_frame_stats(analysed):
     summary, stats = analysed
     assert {p.name for p in summary.players if not p.is_bot} <= set(stats.index)

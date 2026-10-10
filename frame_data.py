@@ -177,7 +177,7 @@ def extract_frames(decoded):
                 moves.get("jump", False), moves.get("double_jump", False), moves.get("dodge", False),
             ))
 
-    return GameFrames(
+    game = GameFrames(
         frames=pd.DataFrame(frame_rows, columns=[
             "frame", "time", "duration", "state", "live", "kickoff", "seconds_remaining",
         ]),
@@ -188,6 +188,29 @@ def extract_frames(decoded):
         ]),
         pickups=pd.DataFrame(pickup_rows, columns=["frame", "time", "player", "team", "x", "y", "big"]),
     )
+    restore_censored_names(game, decoded.get("properties", {}).get("PlayerStats", []))
+    return game
+
+
+def restore_censored_names(game, header_players):
+    """Give players the name the replay header has when the frame data masks it.
+
+    Rocket League's profanity filter replicates some names as "******" in the network data while the
+    header keeps the real one. Per team, when exactly one frame name and one header name are left
+    unmatched they are the same player, so the frame name is replaced everywhere. More than one
+    unmatched name on a team is ambiguous (which '******' is which?) and is left alone.
+    """
+    renames = {}
+    for team in (0, 1):
+        frame_names = set(game.players.loc[game.players.team == team, "player"])
+        header_names = {p.get("Name") for p in header_players if p.get("Team", 0) == team and p.get("Name")}
+        extra, missing = frame_names - header_names, header_names - frame_names
+        if len(extra) == 1 and len(missing) == 1:
+            renames[(team, extra.pop())] = missing.pop()
+    for (team, old), new in renames.items():       # per team: both teams can have a "******"
+        for table in (game.players, game.pickups):
+            table.loc[(table.team == team) & (table.player == old), "player"] = new
+    return {old: new for (_, old), new in renames.items()}
 
 
 def load_game_frames(replay_path):

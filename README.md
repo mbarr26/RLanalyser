@@ -155,7 +155,7 @@ directions:
 | `ui/pitch.js` | Canvas-drawn replay viewer embedded in the match screen: playback, pitch geometry, cars and ball, and `recordClip` (MediaRecorder on the canvas). |
 | `replay_library.py` | Lists replays in a folder, analyses them (`analyse`), caches results as JSON in `cache/`, `LibraryScanner` (background thread that loads/analyses a whole folder) and `ReplayWatcher` (polls the folder for replays saved while the app is open). |
 | `replay_parser.py` | Runs `tools/rrrocket.exe` on a replay and turns the header into a `ReplaySummary` (scores, players with stable `player_id`, goals, who recorded it). |
-| `frame_data.py` | Runs rrrocket with `--network-parse` and converts the network frames into pandas tables: `frames`, `ball` (with the game's last-touch team), `players` (with jump / double-jump / dodge states), `pickups` (`GameFrames`). Also holds the shared pitch constants. |
+| `frame_data.py` | Runs rrrocket with `--network-parse` and converts the network frames into pandas tables (censored `******` names are replaced with the header's real names, `restore_censored_names`): `frames`, `ball` (with the game's last-touch team), `players` (with jump / double-jump / dodge states), `pickups` (`GameFrames`). Also holds the shared pitch constants. |
 | `analysis.py` | Computes per-player stats (`player_stats`) and match stats (`team_stats`) from `GameFrames`. `STAT_GROUPS` defines which stats appear in which tab (sent to the page so it can build the tables generically). |
 | `benchmarks.py` | Rank benchmarks: loads `benchmarks.json`, `percentile`, `closest_band`, and `profile` (your recent form vs a rank, with strengths and weaknesses). Pure measurement. |
 | `benchmarks.json` | Per mode and rank band, the 10/25/50/75/90th percentile of every stat. Built by `dev_tools/build_benchmarks.py`; bundled into the installer if present. |
@@ -209,9 +209,6 @@ per mode is stored in `config.json` under `"ranks"`.
 
 ## Known issues
 
-- **Censored names:** Rocket League's profanity filter shows some names as `******` in the replay's frame
-  data while the header has the real name, so that player's frame stats are filed under `******` and don't
-  match the scoreboard (caught by `test_real_replays.py`, currently marked as an expected failure).
 - Replays from a brand-new Rocket League update can fail frame analysis until rrrocket
   learns the new replay data (the Season 24 update added `TAGame.PRI_TA:PlayerStatus`,
   which rrrocket v0.11.5 couldn't decode). Their scoreboard still shows; frame stats

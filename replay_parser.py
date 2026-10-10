@@ -121,6 +121,26 @@ def _player_id(p):
     return f"{platform}:{account}"
 
 
+def resolve_goal_scorers(goals, players):
+    """Fix goals whose scorer name is censored in the header ("******", "P *********").
+
+    A goal whose scorer isn't one of the scoring team's players is given to the one teammate who has
+    more goals in the player stats than goals credited to them by name. If that isn't a single player
+    it is left as it was.
+    """
+    names = {(p.team, p.name) for p in players}
+    left = {}
+    for p in players:
+        left[(p.team, p.name)] = p.goals - sum(g.scorer == p.name and g.team == p.team for g in goals)
+    for g in goals:
+        if (g.team, g.scorer) in names:
+            continue
+        owed = [name for (team, name), n in left.items() if team == g.team and n > 0]
+        if len(owed) == 1:
+            g.scorer = owed[0]
+            left[(g.team, owed[0])] -= 1
+
+
 def parse_replay(replay_path):
     """Decode a replay's header into a ReplaySummary."""
     data = decode_replay(replay_path)
@@ -146,6 +166,8 @@ def parse_replay(replay_path):
         Goal(frame=g.get("frame", 0), scorer=g.get("PlayerName", "?"), team=g.get("PlayerTeam", 0))
         for g in props.get("Goals", [])
     ]
+
+    resolve_goal_scorers(goals, players)
 
     return ReplaySummary(
         name=props.get("ReplayName", Path(replay_path).stem),

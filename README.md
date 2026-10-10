@@ -156,7 +156,7 @@ directions:
 | `ui/chart.js` | Canvas-drawn trend chart (per-game dots + rolling average, with hover). |
 | `ui/pitch.js` | Canvas-drawn replay viewer embedded in the match screen: playback, pitch geometry, cars and ball, and `recordClip` (MediaRecorder on the canvas). |
 | `replay_library.py` | Lists replays in a folder, analyses them (`analyse`), caches results as JSON in `cache/`, `LibraryScanner` (background thread that loads/analyses a whole folder) and `ReplayWatcher` (polls the folder for replays saved while the app is open). |
-| `replay_parser.py` | Runs `tools/rrrocket.exe` on a replay and turns the header into a `ReplaySummary` (scores, players with stable `player_id`, goals, who recorded it). |
+| `replay_parser.py` | Runs `tools/rrrocket.exe` on a replay and turns the header into a `ReplaySummary` (scores, players with stable `player_id`, goals, who recorded it; `resolve_goal_scorers` un-censors scorer names). |
 | `frame_data.py` | Runs rrrocket with `--network-parse` and converts the network frames into pandas tables (censored `******` names are replaced with the header's real names, `restore_censored_names`): `frames`, `ball` (with the game's last-touch team), `players` (with jump / double-jump / dodge states), `pickups` (`GameFrames`). Also holds the shared pitch constants. |
 | `analysis.py` | Computes per-player stats (`player_stats`) and match stats (`team_stats`) from `GameFrames`. `STAT_GROUPS` defines which stats appear in which tab (sent to the page so it can build the tables generically). |
 | `benchmarks.py` | Rank benchmarks: loads `benchmarks.json`, `percentile`, `closest_band`, and `profile` (your recent form vs a rank, with strengths and weaknesses). Pure measurement. |
@@ -206,7 +206,9 @@ python dev_tools/validate.py --per-band 10              # with BALLCHASING_TOKEN
 python dev_tools/validate.py --benchmarks               # after building benchmarks.json
 ```
 Targets: correlation of at least 0.9 with ballchasing on the movement / positioning / boost stats, and the
-scorer being the last toucher on as many goals as possible (73 of 88 on the first 14 local replays).
+scorer being the last toucher on as many goals as possible (75 of 88 on the first 14 local replays once
+censored scorer names are resolved; the rest are mostly opponent deflections within half a second, and
+sweeping `TOUCH_DELTA` 60-150 and `TOUCH_RADIUS` 300-400 moved it by only 1, so those stay as they are).
 `python -m pytest tests` runs the unit tests (`tests/test_validate.py` covers this tool's maths).
 
 ## Rank benchmarks

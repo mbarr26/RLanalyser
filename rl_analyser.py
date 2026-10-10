@@ -22,6 +22,7 @@ import base64
 import benchmarks
 import coach
 import goals
+import labels
 import updater
 from analysis import STAT_GROUPS
 from frame_data import load_game_frames
@@ -29,7 +30,7 @@ from paths import bundled, user_data
 from pitch_viewer import build_track
 from progress import PROGRESS_STATS, RECENT_GAMES, comparison, guess_me, player_games
 from postgame import current_session, game_row, headline_stats
-from replay_library import LibraryScanner, ReplayWatcher, analyse, list_replays
+from replay_library import CACHE_VERSION, LibraryScanner, ReplayWatcher, analyse, list_replays
 from replay_parser import ReplayParseError
 from version import APP_VERSION
 
@@ -434,6 +435,11 @@ class Api:
         path = Path(result if isinstance(result, str) else result[0])
         path.write_bytes(raw)
         return {"path": str(path)}
+
+    def label_event(self, path, kind, at, right, title=""):
+        """Record a "was this right?" vote on a detected event (see labels.py)."""
+        labels.add(path, kind, at, right, CACHE_VERSION, title)
+        return None
 
     def finish_onboarding(self):
         save_config({**load_config(), "onboarded": True})

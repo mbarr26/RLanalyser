@@ -185,6 +185,23 @@ const coachUi = (() => {
     if (r.focus_for_next_games.length) box.appendChild(listBlock("Focus for your next games", r.focus_for_next_games, "info"));
   }
 
+  // "Was this right?" - votes go to labels.jsonl so the detection rules can be tuned on real games
+  function voteButtons(m) {
+    const wrap = el("span", "vote");
+    wrap.title = "Was this detected correctly?";
+    for (const [right, label, tip] of [[true, "👍", "Right"], [false, "👎", "Wrong"]]) {
+      const b = el("button", "btn vote-btn", label);
+      b.title = tip;
+      b.addEventListener("click", async () => {
+        await pywebview.api.label_event(c.path, m.type, m.time, right, m.title);
+        wrap.querySelectorAll(".vote-btn").forEach(x => x.classList.remove("picked"));
+        b.classList.add("picked");
+      });
+      wrap.appendChild(b);
+    }
+    return wrap;
+  }
+
   function renderMoments() {
     const box = $("coach-moments");
     box.innerHTML = "";
@@ -203,7 +220,7 @@ const coachUi = (() => {
       const clip = el("button", "btn", "Clip");
       clip.title = "Save the 8 seconds around this as a video";
       clip.addEventListener("click", () => clipMoment(m.time, clip));
-      head.append(title, watch, clip);
+      head.append(title, watch, clip, voteButtons(m));
       card.appendChild(head);
       card.appendChild(el("div", "coach-detail", m.detail));
       const ai = explained.get(m.id);

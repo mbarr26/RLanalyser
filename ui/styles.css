@@ -644,6 +644,10 @@ table.stat-table tbody tr:hover td { background: rgba(255, 255, 255, 0.04); }
 .coach-moment.goal { border-left-color: var(--blue); }
 .coach-moment.aerial_goal, .coach-moment.clear { border-left-style: dashed; }
 .coach-moment-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.vote { display: inline-flex; gap: 4px; }
+.vote-btn { padding: 2px 7px; opacity: 0.55; }
+.vote-btn:hover, .vote-btn.picked { opacity: 1; }
+.vote-btn.picked { border-color: var(--accent-text); }
 .coach-moment-title { font-weight: 700; font-size: 13.5px; }
 .coach-clock { display: inline-block; min-width: 42px; margin-right: 10px; color: var(--accent-text); font-weight: 700; font-variant-numeric: tabular-nums; }
 .coach-detail { color: var(--ink-secondary); font-size: 12.5px; line-height: 1.55; margin-top: 4px; }

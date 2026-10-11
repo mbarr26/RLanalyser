@@ -360,7 +360,7 @@ trend chart's data colour is the categorical blue, not the violet.
 
 ## Updating
 
-**Latest release: 1.4.1** (published to the local update folder `Documents\RLAnalyser-Updates`; an installed 1.4.0 offers it from **Check for updates**).
+**Latest release: 1.5.0, a DEMO build** (pretend accounts and payments, see [Accounts and subscription](#accounts-and-subscription); published to the local update folder `Documents\RLAnalyser-Updates`; an installed 1.4.1 offers it from **Check for updates**). It must not be given to the public: the next real release is a normal build (`release.ps1` without `-Demo`) once the account server is connected.
 
 **Releasing a new version** (you):
 1. Raise `APP_VERSION` in `version.py` (e.g. `1.2.0`).

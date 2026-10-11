@@ -19,6 +19,8 @@ import webview
 
 import base64
 
+import access
+import account
 import benchmarks
 import coach
 import goals
@@ -54,6 +56,9 @@ def load_config():
 
 def save_config(config):
     CONFIG_PATH.write_text(json.dumps(config, indent=2))
+
+
+ACCESS = access.Access(account.Account(), load_config, save_config)   # who is signed in and what they may do
 
 
 def guess_replay_dir():
@@ -233,8 +238,9 @@ def goals_payload(player_id):
 
 
 def rank_for(mode):
-    """The rank band the player said they play at in this mode (None if not set)."""
-    return load_config().get("ranks", {}).get(mode)
+    """The rank band the player said they play at in this mode (None if not set, or if benchmarks are a Pro feature
+    they don't have: everything that compares with a rank then falls back to the player's own usual)."""
+    return load_config().get("ranks", {}).get(mode) if ACCESS.allowed("benchmarks") else None
 
 
 def flash_window():
@@ -270,7 +276,7 @@ def postgame_card(record):
     return {
         "path": str(record.path), "result": "Win" if mine > theirs else "Loss" if mine < theirs else "Draw",
         "scoreLine": f"{mine}-{theirs}", "mapName": s.map_name, "mode": mode, "stats": stats, "finding": None,
-        "goals": goals.met_in_game(stored_goals(), row),
+        "goals": goals.met_in_game(stored_goals(), row) if ACCESS.allowed("goals") else [],
     }
 
 
@@ -300,6 +306,9 @@ def handle_new_replay(path):
 
 def progress_payload(player_id, mode):
     games = player_games(list(RECORDS.values()), player_id, mode or None)
+    total, limit = len(games), ACCESS.history_limit()
+    if limit is not None:
+        games = games.tail(limit).reset_index(drop=True)      # Free: only the latest few games
     headings, rows = comparison(games)
     wins = int((games.result == "Win").sum())
     losses = int((games.result == "Loss").sum())
@@ -319,6 +328,7 @@ def progress_payload(player_id, mode):
     return {
         "rank": rank,
         "count": int(len(games)),
+        "limited": None if limit is None or total <= limit else {"shown": int(len(games)), "total": int(total)},
         "wins": wins,
         "losses": losses,
         "compare": {"headings": headings, "rows": [[col, heading, values] for col, heading, values in rows]},
@@ -339,7 +349,8 @@ class Api:
             "config": {"replayDir": str(REPLAY_DIR) if REPLAY_DIR else None, "me": CHOSEN_ME,
                        "ranks": load_config().get("ranks", {})},
             "rankBands": benchmarks.BANDS,
-            "rankModes": benchmarks.modes(),
+            "rankModes": benchmarks.modes() if ACCESS.allowed("benchmarks") else [],
+            "account": ACCESS.state(),
             "statGroups": {group: [[c, h, f] for c, h, f in stats] for group, stats in STAT_GROUPS.items()},
             "progressStats": [[c, h, f] for c, h, f in PROGRESS_STATS],
         }
@@ -386,10 +397,14 @@ class Api:
         return None
 
     def get_goals(self, player_id):
+        if not ACCESS.allowed("goals"):
+            return ACCESS.locked("goals")
         return goals_payload(player_id) if player_id else {"active": [], "suggestions": [], "streak": 0, "stats": {}}
 
     def accept_goal(self, player_id, stat, target):
         """Start a goal on a stat, with the player's chosen target."""
+        if not ACCESS.allowed("goals"):
+            return ACCESS.locked("goals")
         if stat not in goals.GOAL_STATS or len(stored_goals()) >= goals.MAX_GOALS:
             return goals_payload(player_id)
         if any(g["stat"] == stat for g in stored_goals()):
@@ -406,6 +421,8 @@ class Api:
 
     def finish_goal(self, player_id, goal_id):
         """Remove a goal (dismiss it, or collect it once it's met or expired). Met/expired ones go in the history."""
+        if not ACCESS.allowed("goals"):
+            return ACCESS.locked("goals")
         config = load_config()
         games = player_games(list(RECORDS.values()), player_id)
         keep = []
@@ -423,6 +440,9 @@ class Api:
 
     def save_file(self, name, data_url):
         """Ask where to save a file the page made (a share card PNG or a clip) and write it there."""
+        feature = "clips" if name.lower().endswith((".webm", ".mp4")) else "share"
+        if not ACCESS.allowed(feature):
+            return ACCESS.locked(feature)
         try:
             raw = base64.b64decode(data_url.split(",", 1)[1])
         except (IndexError, ValueError):
@@ -451,6 +471,8 @@ class Api:
 
     def set_rank(self, mode, band):
         """Remember which rank band the player is in for a mode (None clears it)."""
+        if not ACCESS.allowed("benchmarks"):
+            return ACCESS.locked("benchmarks")
         config = load_config()
         ranks = config.setdefault("ranks", {})
         if band in benchmarks.BANDS:
@@ -487,6 +509,8 @@ class Api:
     def coach_download(self):
         """Download the chosen model in the background; progress arrives as onCoachDownload."""
         global DOWNLOAD_CANCEL
+        if not ACCESS.allowed("coach"):
+            return ACCESS.locked("coach")
         if DOWNLOAD_CANCEL is not None:
             return None
         tier, cancel = coach_tier(), threading.Event()
@@ -539,12 +563,16 @@ class Api:
             COACH_CHATS.pop(path, None)
         return {
             "path": str(path), "me": facts["me"], "team": facts["team"], "moments": facts["moments"],
-            "insights": facts["insights"], "report": coach.load_report(path, coach_tier(), facts["me"]),
-            "chatKept": chat_kept,
+            "insights": facts["insights"], "chatKept": chat_kept,
+            # the moments and findings are free; the written report and the chat are Pro
+            "aiLocked": not ACCESS.allowed("coach"),
+            "report": coach.load_report(path, coach_tier(), facts["me"]) if ACCESS.allowed("coach") else None,
         }
 
     def coach_generate(self, path):
         """Write the AI analysis in the background; the result arrives as onCoachReport."""
+        if not ACCESS.allowed("coach"):
+            return ACCESS.locked("coach")
         path = Path(path)
         facts = COACH_FACTS.get(path)
         key = ("report", path)
@@ -572,6 +600,8 @@ class Api:
 
     def coach_ask(self, path, question):
         """Answer a question about a match; the reply streams in as onChatDelta, then onChatDone."""
+        if not ACCESS.allowed("coach"):
+            return ACCESS.locked("coach")
         path = Path(path)
         facts = COACH_FACTS.get(path)
         key = ("chat", path)
@@ -609,6 +639,48 @@ class Api:
     def coach_reset(self, path):
         COACH_CHATS.pop(Path(path), None)
         return None
+
+    # ---------- account (see access.py) ----------
+
+    def account_state(self):
+        return ACCESS.state()
+
+    def sign_in(self, email, password):
+        return self._changed(ACCESS.sign_in(email, password))
+
+    def sign_up(self, email, password):
+        return self._changed(ACCESS.sign_up(email, password))
+
+    def sign_out(self):
+        return self._changed(ACCESS.sign_out())
+
+    def reset_password(self, email):
+        return ACCESS.reset_password(email)
+
+    def resend_confirmation(self, email):
+        return ACCESS.resend_confirmation(email)
+
+    def refresh_entitlement(self):
+        """Ask the server what the user has paid for (the page calls this while waiting for a payment)."""
+        return self._changed(ACCESS.refresh())
+
+    def open_checkout(self):
+        """Open the payment page in the browser."""
+        return ACCESS.open_checkout()
+
+    def open_portal(self):
+        """Open the page where they manage the card, cancel, or download invoices."""
+        return ACCESS.open_portal()
+
+    def delete_account(self):
+        return self._changed(ACCESS.delete_account())
+
+    @staticmethod
+    def _changed(result):
+        """Tell the page the plan may have changed (so locks, banners and the account menu update)."""
+        if "error" not in result and "plan" in result:
+            push("onAccount", result)
+        return result
 
     # ---------- updates ----------
 
@@ -710,6 +782,20 @@ def dark_title_bar(window):
 
 API = None   # the one Api instance (set in main), so background code can call its methods
 
+ACCOUNT_CHECK_SECONDS = 600
+
+
+def watch_account():
+    """Background loop: re-check the subscription when it is stale, and tell the page if it changed."""
+    time.sleep(5)                      # let the window and page finish loading first
+    while True:
+        try:
+            if ACCESS.needs_recheck():
+                push("onAccount", ACCESS.refresh())
+        except Exception:
+            pass                       # never let a hiccup stop the loop
+        time.sleep(ACCOUNT_CHECK_SECONDS)
+
 
 def main():
     global WINDOW, API
@@ -725,6 +811,7 @@ def main():
         background_color="#050507",   # matches the page, so there is no white flash while it loads
     )
     WINDOW.events.shown += lambda: dark_title_bar(WINDOW)
+    threading.Thread(target=watch_account, daemon=True).start()
     webview.start()
     coach.stop_server()   # the AI engine is a separate process; don't leave it running
     if PENDING_INSTALLER is not None:

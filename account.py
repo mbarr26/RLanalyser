@@ -292,6 +292,10 @@ class Account:
         if not expect_url:
             return resp
         url = resp.get("url")
-        if not url or urllib.parse.urlparse(url).scheme != "https":
+        parsed = urllib.parse.urlparse(url or "")
+        # Payment pages must be https. The one exception is the pretend service on this PC (dev_tools/fake_service.py),
+        # whose pages are local http: allowed only when the account service itself is local.
+        local_test = parsed.scheme == "http" and (parsed.hostname or "") in LOCAL_HOSTS             and (urllib.parse.urlparse(self.base).hostname or "") in LOCAL_HOSTS
+        if not url or (parsed.scheme != "https" and not local_test):
             raise AccountError("The payment page couldn't be opened. Please try again.", "bad_response")
         return url

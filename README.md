@@ -132,8 +132,10 @@ your email" screen with *resend*, and a Terms/Privacy agreement). Accounts are f
   the easy path, not to be copy protection.
 - With no account service configured (`SUPABASE_URL` empty in `service.py`) nothing is locked and there is no landing
   page, so builds behave as before. The server half lives in `server/` (see its README); to try the whole flow
-  without Supabase or Stripe run `python dev_tools/fake_service.py` and set `RLA_SUPABASE_URL` / `RLA_SUPABASE_KEY`
-  (see that file). `RLA_FORCE_PLAN=free|pro` forces a plan for testing.
+  without Supabase or Stripe **double-click `try_accounts.bat`**: it starts a pretend account service (`dev_tools/fake_service.py`)
+  and the app together. Create any account, press Upgrade and "pay" on the pretend page; the pretend billing page can also
+  make the card fail or cancel, to see the banners. The test sign-in is cleared before and after (`dev_tools/clean_test_account.py`).
+  By hand: set `RLA_SUPABASE_URL` / `RLA_SUPABASE_KEY` (see the fake service's header). `RLA_FORCE_PLAN=free|pro` forces a plan for testing.
 
 ### Updates
 The title bar has a **Check for updates** button, and the app checks quietly a few seconds after
@@ -216,7 +218,7 @@ directions:
 | `ui/landing.js` | The landing page: hero, plans, sign-in / create-account / forgot-password / verify-email screens. |
 | `ui/account.js` | Account menu and plan badge, offline / payment banners, the upgrade dialog and payment polling, and `guard()` for "locked" answers from Python. |
 | `server/` | The online half: Supabase schema and four edge functions (checkout, portal, webhook, delete account) plus setup instructions. Deployed by you, not shipped. |
-| `dev_tools/fake_service.py` | Developer-only pretend account service, to try sign-in and upgrade without Supabase or Stripe. |
+| `dev_tools/fake_service.py` | Developer-only pretend account service with pretend checkout and billing pages, to try sign-in and upgrade without Supabase or Stripe. `try_accounts.bat` launches it together with the app. |
 | `updater.py` | In-app updates: reads the release manifest, compares versions, downloads and SHA-256-checks the installer, starts it. No UI. |
 | `ui/update.js` | The title-bar button and update banner (progress, release notes, errors). |
 | `release.ps1` | Makes a release: builds the installer and writes `dist\release\latest.json` next to it. |

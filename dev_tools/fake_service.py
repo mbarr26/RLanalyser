@@ -16,11 +16,12 @@ No real emails are sent and no real payments are taken.
 """
 
 import argparse
+import html
 import json
 import secrets
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 USERS = {}      # email -> {"password", "confirmed", "id"}
 TOKENS = {}     # access token -> email
@@ -52,6 +53,24 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    def page(self, title, body, email):
+        """A small HTML page standing in for Stripe's. `email` is URL-encoded for the buttons' requests."""
+        raw = (
+            "<!doctype html><meta charset='utf-8'><title>" + title + "</title>"
+            "<body style='font-family:Segoe UI,sans-serif;background:#0d0d11;color:#f4f4f7;max-width:480px;margin:12vh auto;padding:0 20px'>"
+            "<h2>" + title + "</h2>" + body +
+            "<p id='msg' style='color:#a78bfa;font-weight:600'></p>"
+            "<p style='color:#868695;font-size:13px'>A pretend page from dev_tools/fake_service.py, not Stripe. No money moves.</p>"
+            "<script>async function act(q){await fetch('/fake/pay?email=" + email + "&'+q);"
+            "document.getElementById('msg').textContent='Done. Switch back to RL Analyser: it updates by itself within a few seconds.';}"
+            "</script></body>"
+        ).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
     def user(self):
         token = (self.headers.get("Authorization") or "").removeprefix("Bearer ")
         return TOKENS.get(token)
@@ -76,6 +95,16 @@ class Handler(BaseHTTPRequestHandler):
             if q.get("email") in USERS:
                 USERS[q["email"]]["confirmed"] = True
             return self.reply(200, {"confirmed": q.get("email")})
+        if url.path in ("/fake/checkout", "/fake/portal"):
+            who, encoded = html.escape(q.get("email", "")), quote(q.get("email", ""))
+            if url.path == "/fake/checkout":
+                return self.page("Pretend checkout", f"<p>RL Analyser Pro, $15.99 / month, for <b>{who}</b>.</p>"
+                                 "<button style='font-size:16px;padding:10px 22px' onclick=\"act('status=active')\">Pay $15.99 (pretend)</button>",
+                                 encoded)
+            return self.page("Pretend billing portal", f"<p>Billing for <b>{who}</b>.</p><p>"
+                             "<button onclick=\"act('status=active&days=30')\">Subscription is fine</button> "
+                             "<button onclick=\"act('status=past_due&days=-1')\">Make the card fail</button> "
+                             "<button onclick=\"act('status=canceled&days=-1')\">Cancel subscription</button></p>", encoded)
         if url.path == "/fake/pay":
             email = q.get("email", "")
             days = int(q.get("days", 30))
@@ -128,10 +157,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(401, {"message": "not signed in"})
             name = url.path.rsplit("/", 1)[-1]
             if name == "create-checkout":
-                print(f"   >>> checkout opened for {who}. To pay: /fake/pay?email={who}")
-                return self.reply(200, {"url": f"https://checkout.stripe.com/c/pay/fake_{USERS[who]['id']}"})
+                print(f"   >>> checkout opened for {who}")
+                return self.reply(200, {"url": f"http://127.0.0.1:{self.server.server_port}/fake/checkout?email={quote(who)}"})
             if name == "create-portal":
-                return self.reply(200, {"url": "https://billing.stripe.com/p/session/fake"})
+                return self.reply(200, {"url": f"http://127.0.0.1:{self.server.server_port}/fake/portal?email={quote(who)}"})
             if name == "delete-account":
                 USERS.pop(who, None)
                 SUBS.pop(who, None)

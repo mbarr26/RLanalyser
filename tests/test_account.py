@@ -268,3 +268,17 @@ def test_server_error_message_has_no_tokens(server):
     with pytest.raises(AccountError) as e:
         make(server, session()).sign_in("a@b.co", "pw")
     assert e.value.code == "server" and "A1" not in str(e.value)
+
+
+def test_local_pretend_payment_page_is_allowed_only_against_a_local_service(server):
+    server.routes[("POST", "/functions/v1/create-checkout")] = (200, {"url": "http://127.0.0.1:9/fake/checkout"})
+    assert make(server, session()).checkout_url() == "http://127.0.0.1:9/fake/checkout"
+
+
+def test_a_real_service_cannot_send_you_to_a_local_http_page(server, monkeypatch):
+    server.routes[("POST", "/functions/v1/create-checkout")] = (200, {"url": "http://127.0.0.1:9/fake/checkout"})
+    acc = make(server, session())
+    acc.base = "https://abc.supabase.co"          # pretend the service is a real remote one
+    monkeypatch.setattr(Account, "_request", lambda self, *a, **k: {"url": "http://127.0.0.1:9/fake/checkout"})
+    with pytest.raises(AccountError):
+        acc.checkout_url()

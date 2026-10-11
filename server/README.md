@@ -50,14 +50,15 @@ Install the [Supabase CLI](https://supabase.com/docs/guides/cli), then from this
 supabase login
 supabase link --project-ref <your project reference>
 supabase secrets set STRIPE_SECRET_KEY=sk_test_... STRIPE_PRICE_ID=price_... ^
-  CHECKOUT_SUCCESS_URL=https://yoursite.example/thanks CHECKOUT_CANCEL_URL=https://yoursite.example/cancelled ^
-  PORTAL_RETURN_URL=https://yoursite.example/thanks
+  CHECKOUT_SUCCESS_URL=https://yourdomain.com/thanks.html?status=paid CHECKOUT_CANCEL_URL=https://yourdomain.com/thanks.html?status=cancelled ^
+  PORTAL_RETURN_URL=https://yourdomain.com/thanks.html?status=portal
 supabase functions deploy create-checkout create-portal delete-account stripe-webhook
 ```
 
-(`^` is Windows' line continuation; put it all on one line if you prefer.) The success, cancel and return pages are
-just pages that tell the user to switch back to the app, which unlocks by itself within seconds. A single static
-page is enough for all three.
+(`^` is Windows' line continuation; put it all on one line if you prefer.) The success, cancel and return addresses are
+pages on the website (`website/thanks.html`, which says "switch back to the app, it unlocks by itself"):
+`https://yourdomain.com/thanks.html?status=paid` for success, `?status=cancelled` for cancel and `?status=portal` for the
+portal return. Use `https://yourdomain.com/thanks.html?status=confirmed` as the Supabase **Site URL** (step 1.4).
 
 ## 4. The Stripe webhook
 

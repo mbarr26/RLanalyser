@@ -142,6 +142,13 @@ your email" screen with *resend*, and a Terms/Privacy agreement). Accounts are f
 - `dev_tools/fake_service.py` runs the same pretend service stand-alone (set `RLA_SUPABASE_URL` / `RLA_SUPABASE_KEY` to
   point an app at it). `RLA_FORCE_PLAN=free|pro` forces a plan for testing.
 
+### Website
+`website/` is the public marketing and download site, in the app's own look (dark surfaces, violet accent, blue/orange for
+data), with the animated 2D replay in the hero, the Free/Pro pricing, an FAQ, a download page that reads the current release,
+draft Terms/Privacy/Refunds pages, and the `thanks.html` page Stripe and Supabase send people back to. It is plain HTML, CSS
+and JavaScript with no build step, no cookies and no analytics. See `website/README.md` for how to preview, tweak, publish a
+release to it (`website/tools/sync_release.py` refuses a demo build) and deploy it.
+
 ### Updates
 The title bar has a **Check for updates** button, and the app checks quietly a few seconds after
 it starts. When a newer version has been released, a banner shows what's new with **Install &
@@ -222,6 +229,7 @@ directions:
 | `access.py` | Glue the `Api` uses: signed-in state, cached plan in `config.json`, `allowed(feature)`, `history_limit()`, and the actions the page calls (sign in, upgrade, portal, delete). |
 | `ui/landing.js` | The landing page: hero, plans, sign-in / create-account / forgot-password / verify-email screens. |
 | `ui/account.js` | Account menu and plan badge, offline / payment banners, the upgrade dialog and payment polling, and `guard()` for "locked" answers from Python. |
+| `website/` | The public website: home, download, legal drafts, `thanks.html`, `site.config.js` (settings), `assets/` (CSS, JS, share image, `release.json`), `tools/` (`sync_release.py`, `set_domain.py`). Static, no build step. |
 | `server/` | The online half: Supabase schema and four edge functions (checkout, portal, webhook, delete account) plus setup instructions. Deployed by you, not shipped. |
 | `demo_service.py` | The pretend account service (sign-up, sign-in, pretend Stripe checkout and billing pages) used by demo mode. Saves to `demo-accounts.json`; listens on 127.0.0.1 only. |
 | `dev_tools/fake_service.py` | Runs `demo_service.py` stand-alone in memory, for testing. `try_accounts.bat` runs the app in demo mode. |

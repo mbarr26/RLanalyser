@@ -43,6 +43,7 @@ const accountUi = (() => {
     a.st = st;
     renderButton();
     renderBanner();
+    $("demo-chip").classList.toggle("hidden", !st.demo);
     if (!$("account-menu").classList.contains("hidden")) renderMenu();
     if (a.modal) renderModal();
     if (st.needsSignIn && state.view !== "landing" && state.meta) landingUi.show(st);
@@ -118,7 +119,8 @@ const accountUi = (() => {
     const planLine = st.reason === "forced" ? "Testing plan: " + st.plan
       : pro ? `Pro${until ? ` · paid until ${esc(until)}` : ""}` : "Free plan";
     menu.innerHTML = `
-      <div class="account-head"><div class="account-email">${esc(st.email)}</div><div class="sub">${planLine}</div></div>
+      <div class="account-head"><div class="account-email">${esc(st.email)}</div><div class="sub">${planLine}</div>
+        ${st.demo ? '<div class="sub demo-line">Demo mode: pretend account, pretend payments</div>' : ""}</div>
       ${pro || st.status === "past_due" || st.status === "canceled"
         ? `<button class="menu-item" data-act="manage">Manage subscription</button>`
         : `<button class="menu-item accent" data-act="upgrade">Upgrade to Pro · ${esc(st.price)}</button>`}
@@ -192,7 +194,7 @@ const accountUi = (() => {
       body.innerHTML = `<h2 id="upgrade-title">${m.name ? "Unlock " + esc(m.name) : "Upgrade to Pro"}</h2>
         <p class="sub">${lead}</p>
         <ul class="pro-list">${PRO_FEATURES.map(f => `<li>${esc(f)}</li>`).join("")}</ul>
-        <div class="price-line"><b>${esc(st.price)}</b><span class="sub"> · cancel any time</span></div>
+        <div class="price-line"><b>${esc(st.price)}</b><span class="sub"> · ${st.demo ? "pretend: nobody is charged in demo mode" : "cancel any time"}</span></div>
         ${m.error ? `<div class="auth-error">${esc(m.error)}</div>` : ""}
         <div class="modal-actions"><button class="btn btn-primary" data-act="upgrade">Upgrade</button>${close}</div>`;
     }

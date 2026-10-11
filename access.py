@@ -68,7 +68,7 @@ class Access:
         plan = self.plan_state()
         ent = self.entitlement() or {}
         return {
-            "configured": self.configured(), "needsSignIn": self.needs_sign_in(),
+            "configured": self.configured(), "demo": service.DEMO_ACTIVE, "needsSignIn": self.needs_sign_in(),
             "signedIn": self.account.signed_in(), "email": self.account.email(),
             "plan": plan["plan"], "reason": plan["reason"], "daysLeft": plan["daysLeft"],
             "status": ent.get("status") or "none", "periodEnd": ent.get("period_end"),

@@ -809,6 +809,11 @@ def main():
     global WINDOW, API
     API = Api()
     updater.cleanup_old()
+    demo = service.start_demo(user_data("demo-accounts.json"))      # only in a demo build (see service.py)
+    if demo and ACCESS.account.signed_in():
+        saved = ACCESS.account.session() or {}
+        if saved.get("access_token") not in demo.tokens and saved.get("refresh_token") not in demo.refresh:
+            ACCESS.sign_out()          # a sign-in from an earlier demo that the demo accounts file no longer knows
     WINDOW = webview.create_window(
         "RL Analyser",
         str(UI_DIR / "index.html"),

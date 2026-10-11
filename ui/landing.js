@@ -134,7 +134,9 @@ const landingUi = (() => {
 
   function render() {
     if (!L.st) return;
-    $("landing").innerHTML = `${hero()}<section class="landing-auth">${authCard()}
+    const demo = L.st.demo ? `<div class="demo-note"><b>Demo build.</b> Accounts and payments here are pretend: nothing is
+      stored online and nobody is charged. Make up an email and password to try it.</div>` : "";
+    $("landing").innerHTML = `${hero()}<section class="landing-auth">${demo}${authCard()}
       <footer class="landing-foot">${link(L.st.terms, "Terms")} &middot; ${link(L.st.privacy, "Privacy")}
         ${L.st.support ? ` &middot; <span>${esc(L.st.support)}</span>` : ""}</footer></section>`;
     bind();

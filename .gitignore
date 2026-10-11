@@ -9,3 +9,5 @@ updates/
 benchmark_cache/
 validation_report.md
 coach_eval_report.md
+demo.flag
+demo-accounts.json

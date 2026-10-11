@@ -20,7 +20,8 @@ param(
     [string]$NotesFile = "",
     [string]$BaseUrl = "",
     [string]$PublishTo = "",
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$Demo       # a DEMO build: pretend accounts and payments are built in (never give this one to the public)
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,8 +32,14 @@ if ($BaseUrl -and -not $BaseUrl.EndsWith("/")) { $BaseUrl += "/" }
 if ($BaseUrl -and -not $BaseUrl.StartsWith("https://")) { throw "-BaseUrl must start with https:// (the app refuses other download addresses)" }
 
 if (-not $SkipBuild) {
-    & "$PSScriptRoot\build.ps1"
-    if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+    if ($Demo) { $env:RLA_DEMO_BUILD = "1" } else { Remove-Item Env:RLA_DEMO_BUILD -ErrorAction SilentlyContinue }
+    try {
+        & "$PSScriptRoot\build.ps1"
+        if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+    } finally {
+        Remove-Item Env:RLA_DEMO_BUILD -ErrorAction SilentlyContinue
+        Remove-Item "$PSScriptRoot\demo.flag" -ErrorAction SilentlyContinue      # so a later normal build can't pick it up
+    }
 }
 
 $version = (python -c "from version import APP_VERSION; print(APP_VERSION)").Trim()

@@ -841,3 +841,8 @@ table.stat-table tbody tr:hover td { background: rgba(255, 255, 255, 0.04); }
 .lock-card .sub { color: var(--ink-secondary); }
 .history-note { color: var(--ink-muted); font-size: 12px; }
 .history-note button { border: 0; background: transparent; color: var(--accent-text); padding: 0 0 0 4px; font-size: 12px; font-weight: 600; }
+
+/* demo build: a clear marker that accounts and payments are pretend */
+.demo-chip { font-size: 10px; font-weight: 800; letter-spacing: .1em; color: #1a1205; background: var(--warn); padding: 3px 8px; border-radius: 99px; -webkit-app-region: no-drag; }
+.demo-note { background: rgba(250, 178, 25, 0.10); border: 1px solid rgba(250, 178, 25, 0.45); color: var(--ink); border-radius: var(--radius-md); padding: 10px 14px; font-size: 12.5px; line-height: 1.45; }
+.demo-line { color: var(--warn) !important; margin-top: 4px; }

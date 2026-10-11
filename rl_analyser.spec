@@ -14,6 +14,14 @@ hiddenimports = collect_submodules("webview.platforms") + ["clr_loader", "python
 hiddenimports += collect_submodules("keyring.backends") + ["win32ctypes.core", "win32ctypes.pywin32"]
 metadata = copy_metadata("keyring") + copy_metadata("jaraco.classes") + copy_metadata("jaraco.functools") + copy_metadata("jaraco.context")
 
+# A DEMO build (release.ps1 -Demo) bundles a flag file that makes the app run its pretend account service.
+# Normal builds never contain it, so they can't ship pretend payments by accident.
+demo_files = []
+if os.environ.get("RLA_DEMO_BUILD"):
+    with open("demo.flag", "w") as f:
+        f.write("demo build: pretend accounts and payments")
+    demo_files = [("demo.flag", ".")]
+
 a = Analysis(
     ["rl_analyser.py"],
     pathex=["."],
@@ -21,7 +29,7 @@ a = Analysis(
     datas=[
         ("ui", "ui"),
         ("tools", "tools"),       # rrrocket.exe, llama-server/ (+ licences)
-    ] + metadata + ([("benchmarks.json", ".")] if os.path.exists("benchmarks.json") else []),   # rank tables (dev_tools/build_benchmarks.py)
+    ] + metadata + demo_files + ([("benchmarks.json", ".")] if os.path.exists("benchmarks.json") else []),   # rank tables (dev_tools/build_benchmarks.py)
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],

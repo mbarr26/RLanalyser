@@ -126,12 +126,23 @@ class MemoryStore:
 
 class Account:
     def __init__(self, base_url=None, anon_key=None, store=None, now=datetime.now):
-        self.base = (base_url if base_url is not None else service.SUPABASE_URL).rstrip("/")
-        self.key = anon_key if anon_key is not None else service.SUPABASE_ANON_KEY
+        self._base, self._key = base_url, anon_key     # None = read the app's service settings each time
         self.store = store or KeyringStore()
         self.now = now
 
     # --- plumbing ---
+
+    @property
+    def base(self):
+        return (self._base if self._base is not None else service.SUPABASE_URL).rstrip("/")
+
+    @base.setter
+    def base(self, value):
+        self._base = value
+
+    @property
+    def key(self):
+        return self._key if self._key is not None else service.SUPABASE_ANON_KEY
 
     def _check_url(self, url):
         parsed = urllib.parse.urlparse(url)

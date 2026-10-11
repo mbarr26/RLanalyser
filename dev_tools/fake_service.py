@@ -5,9 +5,9 @@
     set RLA_SUPABASE_KEY=anything
     python rl_analyser.py
 
-It speaks just enough of Supabase's API for account.py (sign up, sign in, refresh, reset, the subscriptions
-table and the three Stripe functions) and keeps everything in memory, so restarting it forgets all accounts.
-No real emails are sent and no real payments are taken.
+This is demo_service.py (see its header) run on its own, in memory: restarting it forgets all accounts. For the
+simplest way to try the flow, set RLA_DEMO=1 (or double-click try_accounts.bat): the app then runs the same service
+inside itself. No real emails are sent and no real payments are taken.
 
     --confirm-email   new accounts must be confirmed first:   http://127.0.0.1:8765/fake/confirm?email=you@example.com
     Pretend to pay:   http://127.0.0.1:8765/fake/pay?email=you@example.com                (becomes Pro for 30 days)
@@ -16,156 +16,13 @@ No real emails are sent and no real payments are taken.
 """
 
 import argparse
-import html
-import json
-import secrets
-from datetime import datetime, timedelta, timezone
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import parse_qs, quote, urlparse
+import sys
+import time
+from pathlib import Path
 
-USERS = {}      # email -> {"password", "confirmed", "id"}
-TOKENS = {}     # access token -> email
-REFRESH = {}    # refresh token -> email
-SUBS = {}       # email -> {"status", "current_period_end"}
-OPTIONS = {"confirm": False}
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-
-def issue(email):
-    access, refresh = secrets.token_urlsafe(24), secrets.token_urlsafe(24)
-    TOKENS[access], REFRESH[refresh] = email, email
-    return {"access_token": access, "refresh_token": refresh, "expires_in": 3600, "token_type": "bearer",
-            "user": {"id": USERS[email]["id"], "email": email, "email_confirmed_at": "2026-01-01T00:00:00Z"}}
-
-
-def error(status, code, msg):
-    return status, {"error_code": code, "msg": msg}
-
-
-class Handler(BaseHTTPRequestHandler):
-    def log_message(self, fmt, *args):
-        print("  ", self.command, self.path, "->", args[1] if len(args) > 1 else "")
-
-    def reply(self, status, body):
-        raw = json.dumps(body).encode()
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(raw)))
-        self.end_headers()
-        self.wfile.write(raw)
-
-    def page(self, title, body, email):
-        """A small HTML page standing in for Stripe's. `email` is URL-encoded for the buttons' requests."""
-        raw = (
-            "<!doctype html><meta charset='utf-8'><title>" + title + "</title>"
-            "<body style='font-family:Segoe UI,sans-serif;background:#0d0d11;color:#f4f4f7;max-width:480px;margin:12vh auto;padding:0 20px'>"
-            "<h2>" + title + "</h2>" + body +
-            "<p id='msg' style='color:#a78bfa;font-weight:600'></p>"
-            "<p style='color:#868695;font-size:13px'>A pretend page from dev_tools/fake_service.py, not Stripe. No money moves.</p>"
-            "<script>async function act(q){await fetch('/fake/pay?email=" + email + "&'+q);"
-            "document.getElementById('msg').textContent='Done. Switch back to RL Analyser: it updates by itself within a few seconds.';}"
-            "</script></body>"
-        ).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(raw)))
-        self.end_headers()
-        self.wfile.write(raw)
-
-    def user(self):
-        token = (self.headers.get("Authorization") or "").removeprefix("Bearer ")
-        return TOKENS.get(token)
-
-    def body(self):
-        length = int(self.headers.get("Content-Length") or 0)
-        try:
-            return json.loads(self.rfile.read(length) or b"{}") if length else {}
-        except ValueError:
-            return {}
-
-    def do_GET(self):
-        url = urlparse(self.path)
-        q = {k: v[0] for k, v in parse_qs(url.query).items()}
-        if url.path == "/rest/v1/subscriptions":
-            email = self.user()
-            if not email:                       # like Supabase: an unknown or expired token is a 401
-                return self.reply(401, {"code": "PGRST301", "message": "JWT expired"})
-            row = SUBS.get(email)
-            return self.reply(200, [row] if row and row["status"] != "none" else [])
-        if url.path == "/fake/confirm":
-            if q.get("email") in USERS:
-                USERS[q["email"]]["confirmed"] = True
-            return self.reply(200, {"confirmed": q.get("email")})
-        if url.path in ("/fake/checkout", "/fake/portal"):
-            who, encoded = html.escape(q.get("email", "")), quote(q.get("email", ""))
-            if url.path == "/fake/checkout":
-                return self.page("Pretend checkout", f"<p>RL Analyser Pro, $15.99 / month, for <b>{who}</b>.</p>"
-                                 "<button style='font-size:16px;padding:10px 22px' onclick=\"act('status=active')\">Pay $15.99 (pretend)</button>",
-                                 encoded)
-            return self.page("Pretend billing portal", f"<p>Billing for <b>{who}</b>.</p><p>"
-                             "<button onclick=\"act('status=active&days=30')\">Subscription is fine</button> "
-                             "<button onclick=\"act('status=past_due&days=-1')\">Make the card fail</button> "
-                             "<button onclick=\"act('status=canceled&days=-1')\">Cancel subscription</button></p>", encoded)
-        if url.path == "/fake/pay":
-            email = q.get("email", "")
-            days = int(q.get("days", 30))
-            SUBS[email] = {"status": q.get("status", "active"),
-                           "current_period_end": (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()}
-            print(f"   >>> {email}: {SUBS[email]}")
-            return self.reply(200, SUBS[email])
-        self.reply(404, {})
-
-    def do_POST(self):
-        url = urlparse(self.path)
-        q = {k: v[0] for k, v in parse_qs(url.query).items()}
-        data = self.body()
-        email = (data.get("email") or "").strip().lower()
-
-        if url.path == "/auth/v1/signup":
-            if email in USERS:
-                return self.reply(*error(422, "user_already_exists", "User already registered"))
-            if len(data.get("password") or "") < 8:
-                return self.reply(*error(422, "weak_password", "Password should be at least 8 characters"))
-            USERS[email] = {"password": data["password"], "confirmed": not OPTIONS["confirm"], "id": secrets.token_hex(8)}
-            if OPTIONS["confirm"]:
-                print(f"   >>> confirm with http://127.0.0.1:{self.server.server_port}/fake/confirm?email={email}")
-                return self.reply(200, {"user": {"email": email}})
-            return self.reply(200, issue(email))
-
-        if url.path == "/auth/v1/token" and q.get("grant_type") == "password":
-            user = USERS.get(email)
-            if not user or user["password"] != data.get("password"):
-                return self.reply(*error(400, "invalid_credentials", "Invalid login credentials"))
-            if not user["confirmed"]:
-                return self.reply(*error(400, "email_not_confirmed", "Email not confirmed"))
-            return self.reply(200, issue(email))
-
-        if url.path == "/auth/v1/token" and q.get("grant_type") == "refresh_token":
-            who = REFRESH.pop(data.get("refresh_token"), None)
-            if not who or who not in USERS:
-                return self.reply(*error(400, "refresh_token_not_found", "Invalid Refresh Token"))
-            return self.reply(200, issue(who))
-
-        if url.path in ("/auth/v1/recover", "/auth/v1/resend"):
-            print(f"   >>> (pretend email sent to {email})")
-            return self.reply(200, {})
-        if url.path == "/auth/v1/logout":
-            return self.reply(200, {})
-
-        who = self.user()
-        if url.path.startswith("/functions/v1/"):
-            if not who:
-                return self.reply(401, {"message": "not signed in"})
-            name = url.path.rsplit("/", 1)[-1]
-            if name == "create-checkout":
-                print(f"   >>> checkout opened for {who}")
-                return self.reply(200, {"url": f"http://127.0.0.1:{self.server.server_port}/fake/checkout?email={quote(who)}"})
-            if name == "create-portal":
-                return self.reply(200, {"url": f"http://127.0.0.1:{self.server.server_port}/fake/portal?email={quote(who)}"})
-            if name == "delete-account":
-                USERS.pop(who, None)
-                SUBS.pop(who, None)
-                return self.reply(200, {})
-        self.reply(404, {})
+from demo_service import DemoService  # noqa: E402
 
 
 def main():
@@ -173,9 +30,14 @@ def main():
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--confirm-email", action="store_true")
     args = ap.parse_args()
-    OPTIONS["confirm"] = args.confirm_email
-    print(f"Fake account service on http://127.0.0.1:{args.port}  (email confirmation {'ON' if args.confirm_email else 'off'})")
-    HTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
+    service = DemoService(confirm_email=args.confirm_email, log=lambda *a: print("  ", *a, flush=True))
+    port = service.start(args.port)
+    print(f"Fake account service on http://127.0.0.1:{port}  (email confirmation {'ON' if args.confirm_email else 'off'})", flush=True)
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        service.stop()
 
 
 if __name__ == "__main__":

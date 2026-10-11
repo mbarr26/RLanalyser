@@ -131,11 +131,16 @@ your email" screen with *resend*, and a Terms/Privacy agreement). Accounts are f
 - Honest limit: this is a local app, so someone who edits its code can bypass the checks. They exist to make paying
   the easy path, not to be copy protection.
 - With no account service configured (`SUPABASE_URL` empty in `service.py`) nothing is locked and there is no landing
-  page, so builds behave as before. The server half lives in `server/` (see its README); to try the whole flow
-  without Supabase or Stripe **double-click `try_accounts.bat`**: it starts a pretend account service (`dev_tools/fake_service.py`)
-  and the app together. Create any account, press Upgrade and "pay" on the pretend page; the pretend billing page can also
-  make the card fail or cancel, to see the banners. The test sign-in is cleared before and after (`dev_tools/clean_test_account.py`).
-  By hand: set `RLA_SUPABASE_URL` / `RLA_SUPABASE_KEY` (see the fake service's header). `RLA_FORCE_PLAN=free|pro` forces a plan for testing.
+  page, so normal builds behave as before. The server half lives in `server/` (see its README).
+- **Demo mode** lets you try the whole flow before Supabase and Stripe exist. The app runs a pretend account service
+  inside itself (`demo_service.py`) and shows a yellow **DEMO** badge: sign up with any email, press Upgrade and "pay" on
+  a pretend page (the pretend billing page can also make the card fail or cancel, to see the banners). Demo accounts are
+  saved on your PC (`demo-accounts.json`, passwords hashed) so they survive a restart. From source: `RLA_DEMO=1 python
+  rl_analyser.py`, or double-click `try_accounts.bat` (fresh pretend accounts each time, cleaned up afterwards). As an
+  installable build: `release.ps1 -Demo` bundles a `demo.flag` file; normal builds never contain it. **Anyone can "pay" for
+  Pro in a demo build, so never give one to the public**; the real server (`SUPABASE_URL` set) always wins over demo mode.
+- `dev_tools/fake_service.py` runs the same pretend service stand-alone (set `RLA_SUPABASE_URL` / `RLA_SUPABASE_KEY` to
+  point an app at it). `RLA_FORCE_PLAN=free|pro` forces a plan for testing.
 
 ### Updates
 The title bar has a **Check for updates** button, and the app checks quietly a few seconds after
@@ -218,7 +223,8 @@ directions:
 | `ui/landing.js` | The landing page: hero, plans, sign-in / create-account / forgot-password / verify-email screens. |
 | `ui/account.js` | Account menu and plan badge, offline / payment banners, the upgrade dialog and payment polling, and `guard()` for "locked" answers from Python. |
 | `server/` | The online half: Supabase schema and four edge functions (checkout, portal, webhook, delete account) plus setup instructions. Deployed by you, not shipped. |
-| `dev_tools/fake_service.py` | Developer-only pretend account service with pretend checkout and billing pages, to try sign-in and upgrade without Supabase or Stripe. `try_accounts.bat` launches it together with the app. |
+| `demo_service.py` | The pretend account service (sign-up, sign-in, pretend Stripe checkout and billing pages) used by demo mode. Saves to `demo-accounts.json`; listens on 127.0.0.1 only. |
+| `dev_tools/fake_service.py` | Runs `demo_service.py` stand-alone in memory, for testing. `try_accounts.bat` runs the app in demo mode. |
 | `updater.py` | In-app updates: reads the release manifest, compares versions, downloads and SHA-256-checks the installer, starts it. No UI. |
 | `ui/update.js` | The title-bar button and update banner (progress, release notes, errors). |
 | `release.ps1` | Makes a release: builds the installer and writes `dist\release\latest.json` next to it. |

@@ -92,7 +92,7 @@ def test_history_limit():
 
 
 def test_locked_payload_names_the_feature():
-    assert ent.locked_payload("coach") == {"locked": "coach", "name": "The AI coach"}
+    assert ent.locked_payload("coach") == {"locked": "coach", "name": "AI coach"}
 
 
 def test_needs_recheck_after_six_hours():
@@ -106,3 +106,19 @@ def test_forced_plan_for_local_testing(monkeypatch):
     assert ent.describe(None, NOW) == {"plan": "pro", "reason": "forced", "daysLeft": None}
     monkeypatch.setenv("RLA_FORCE_PLAN", "free")
     assert ent.plan_now(paid(), NOW) == "free"
+
+
+def test_server_timestamps_with_a_timezone_are_understood():
+    """Supabase sends UTC with an offset; comparing that with local naive times used to raise."""
+    from datetime import timezone
+    end = (NOW + timedelta(days=20)).astimezone()                       # aware, in the local zone
+    for text in (end.isoformat(), end.astimezone(timezone.utc).isoformat(),
+                 end.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")):
+        e = {"status": "active", "checked_at": NOW.isoformat(), "period_end": text}
+        assert ent.plan_now(e, NOW) == "pro", text
+    over = (NOW - timedelta(days=5)).astimezone().astimezone(timezone.utc).isoformat()
+    assert ent.plan_now({"status": "active", "checked_at": NOW.isoformat(), "period_end": over}, NOW) == "free"
+
+
+def test_non_string_times_do_not_crash():
+    assert ent.plan_now({"status": "active", "checked_at": 12345, "period_end": 5}, NOW) == "free"

@@ -244,6 +244,10 @@ class Account:
         self._save(resp, email.strip())
         return {"email": self.email()}
 
+    def forget(self):
+        """Drop the session on this PC only (the server already says it is no good)."""
+        self.store.clear()
+
     def sign_out(self):
         """Forget the session here, and tell the server (best effort: being offline mustn't block signing out)."""
         s = self.session()

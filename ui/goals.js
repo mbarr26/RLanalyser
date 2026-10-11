@@ -9,6 +9,14 @@ const goalsUi = (() => {
     render();
   }
 
+  // Free accounts see a single line that opens the upgrade dialog instead of the goals
+  function renderLocked(box) {
+    box.innerHTML = `<section class="alert-card goals lock-card">
+      <div><span class="alert-kicker">Weekly goals</span>
+        <div class="sub">Get goals picked from your weakest stats, with drills and training packs to hit them.</div></div>
+      <button class="btn btn-small primary" data-upgrade="goals">&#128274; Unlock with Pro</button></section>`;
+  }
+
   async function copyCode(code, btn) {
     try {
       await navigator.clipboard.writeText(code);
@@ -56,19 +64,24 @@ const goalsUi = (() => {
 
   function render() {
     const box = $("home-goals");
+    if (data && data.locked) { renderLocked(box); return; }
     if (!data || (!data.active.length && !data.suggestions.length)) { box.innerHTML = ""; return; }
     box.innerHTML = `<section class="alert-card goals">
       <div class="alert-head"><span class="alert-kicker">This week's goals</span>
         ${data.streak ? `<span class="sub">${data.streak} goal${data.streak === 1 ? "" : "s"} met in a row</span>` : ""}</div>
       ${data.active.map(activeHtml).join("")}${data.suggestions.map(ideaHtml).join("")}</section>`;
     box.querySelectorAll("[data-finish]").forEach(b => b.onclick = async () => {
-      data = await pywebview.api.finish_goal(state.me, b.dataset.finish);
+      const next = await pywebview.api.finish_goal(state.me, b.dataset.finish);
+      if (accountUi.guard(next)) return;
+      data = next;
       render();
     });
     box.querySelectorAll("[data-accept]").forEach(b => b.onclick = async () => {
       const target = parseFloat(b.closest(".idea").querySelector(".goal-target").value);
       if (Number.isNaN(target)) return;
-      data = await pywebview.api.accept_goal(state.me, b.dataset.accept, target);
+      const next = await pywebview.api.accept_goal(state.me, b.dataset.accept, target);
+      if (accountUi.guard(next)) return;
+      data = next;
       render();
     });
     box.querySelectorAll("[data-copy]").forEach(b => b.onclick = () => copyCode(b.dataset.copy, b));

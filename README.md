@@ -104,6 +104,37 @@ layered surfaces, one electric-violet accent and soft glows. It ships as a Windo
   rolling average (line). Hover a dot for that game's details.
 - **Games list** – your games with the key stats; double-click one to open its match screen.
 
+### Accounts and subscription
+The app opens on a **landing page** until someone is signed in: what the app does, a Free vs Pro comparison with
+the price, and **Sign in / Create account** forms (password show/hide and strength hint, "forgot password", a "check
+your email" screen with *resend*, and a Terms/Privacy agreement). Accounts are free; **Pro costs $15.99 a month**
+(`PRICE_TEXT` in `service.py`; the real price lives in Stripe).
+
+| | Free | Pro |
+|---|---|---|
+| 2D replay, scoreboard, all stat tabs, key moments and findings | yes | yes |
+| Progress and trends | latest 10 games | full history |
+| AI coach (written analysis and chat) | - | yes |
+| Rank benchmarks and percentiles | - | yes |
+| Weekly goals with drills | - | yes |
+| Share cards and replay clips | - | yes |
+
+- **Upgrade** (from any locked button, or the account menu) opens Stripe's payment page in the browser; the app
+  shows "waiting for your payment" and unlocks by itself within seconds. Card details only ever touch Stripe.
+- **Account menu** (title bar, shows a Free/Pro badge): plan and renewal date, **Upgrade** or **Manage subscription**
+  (Stripe's portal: update card, cancel, invoices), **Refresh my plan**, **Sign out**, **Delete my account**.
+- **Lapses are gentle**: offline, Pro keeps working for 7 days (with a banner); a failing card keeps Pro for 3 days after
+  the month ends ("update your card" banner); after that the account is Free with a "renew" banner. Replays, caches
+  and stats are never deleted.
+- Your **replays never leave your PC**. Only the email, a password hash and the subscription status are stored online.
+  The sign-in is kept in the Windows Credential Manager (not in `config.json`).
+- Honest limit: this is a local app, so someone who edits its code can bypass the checks. They exist to make paying
+  the easy path, not to be copy protection.
+- With no account service configured (`SUPABASE_URL` empty in `service.py`) nothing is locked and there is no landing
+  page, so builds behave as before. The server half lives in `server/` (see its README); to try the whole flow
+  without Supabase or Stripe run `python dev_tools/fake_service.py` and set `RLA_SUPABASE_URL` / `RLA_SUPABASE_KEY`
+  (see that file). `RLA_FORCE_PLAN=free|pro` forces a plan for testing.
+
 ### Updates
 The title bar has a **Check for updates** button, and the app checks quietly a few seconds after
 it starts. When a newer version has been released, a banner shows what's new with **Install &
@@ -178,6 +209,14 @@ directions:
 | `coach.py` | The AI layer: model download, llama.cpp server management, the match "dossier" given to the model, report generation, and chat. Also a CLI: `python coach.py match.replay --me "Name"`. |
 | `version.py` | `APP_VERSION`: shown in the title bar and used to name the installer. |
 | `rl_analyser.spec` | PyInstaller recipe: a windowed one-folder build with `ui/` and `tools/` bundled. |
+| `service.py` | Constants for the account service: Supabase URL and (public) anon key, price text, Terms/Privacy links. Empty = no accounts, nothing locked. |
+| `account.py` | Sign up / in / out, password reset, token refresh and the subscription lookup over HTTPS (`urllib`); the session is kept in the Windows Credential Manager through `keyring`. No UI. |
+| `entitlements.py` | What Free and Pro may do, and the lapse rules (7 days offline, 3 days past due). Pure logic. |
+| `access.py` | Glue the `Api` uses: signed-in state, cached plan in `config.json`, `allowed(feature)`, `history_limit()`, and the actions the page calls (sign in, upgrade, portal, delete). |
+| `ui/landing.js` | The landing page: hero, plans, sign-in / create-account / forgot-password / verify-email screens. |
+| `ui/account.js` | Account menu and plan badge, offline / payment banners, the upgrade dialog and payment polling, and `guard()` for "locked" answers from Python. |
+| `server/` | The online half: Supabase schema and four edge functions (checkout, portal, webhook, delete account) plus setup instructions. Deployed by you, not shipped. |
+| `dev_tools/fake_service.py` | Developer-only pretend account service, to try sign-in and upgrade without Supabase or Stripe. |
 | `updater.py` | In-app updates: reads the release manifest, compares versions, downloads and SHA-256-checks the installer, starts it. No UI. |
 | `ui/update.js` | The title-bar button and update banner (progress, release notes, errors). |
 | `release.ps1` | Makes a release: builds the installer and writes `dist\release\latest.json` next to it. |
@@ -229,6 +268,10 @@ per mode is stored in `config.json` under `"ranks"`.
 
 ## Known issues
 
+- pywebview serves the page on a random local port, and very rarely that is one Chromium refuses as "unsafe"
+  (for example 6667): the window then shows "can't reach this page" (`ERR_UNSAFE_PORT`). Closing and reopening the
+  app picks another port.
+
 - Replays from a brand-new Rocket League update can fail frame analysis until rrrocket
   learns the new replay data (the Season 24 update added `TAGame.PRI_TA:PlayerStatus`,
   which rrrocket v0.11.5 couldn't decode). Their scoreboard still shows; frame stats
@@ -275,6 +318,7 @@ per mode is stored in `config.json` under `"ranks"`.
 - Windows (rrrocket is bundled as a Windows `.exe`; the window uses the Edge WebView2
   runtime, which ships with Windows 11 / is auto-installed on Windows 10)
 - Python 3.10+
+- `keyring` (`pip install keyring`) for the saved sign-in
 - `pandas`, `numpy` and `pywebview` (`pip install pandas numpy pywebview`); no other
   UI toolkit needed
 - To run the tests: `pip install pytest`, then `python -m pytest tests`

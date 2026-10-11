@@ -59,6 +59,7 @@ const share = (() => {
   async function output(canvas, name) {
     const url = canvas.toDataURL("image/png");
     const saved = await pywebview.api.save_file(name, url);
+    if (accountUi.guard(saved)) return;
     if (saved && saved.error) { $("status").textContent = saved.error; return; }
     let copied = false;
     try {
@@ -70,6 +71,7 @@ const share = (() => {
   }
 
   function match(path) {
+    if (!accountUi.can("share")) { accountUi.paywall("share"); return; }
     const record = state.records.get(path);
     if (!record || !state.me) { $("status").textContent = "Pick which player you are first (This is me)"; return; }
     const s = record.summary, me = s.players.find(p => p.player_id === state.me);
@@ -95,6 +97,7 @@ const share = (() => {
   }
 
   function progress() {
+    if (!accountUi.can("share")) { accountUi.paywall("share"); return; }
     const d = state.homeProgress;
     if (!d || !d.count) { $("status").textContent = "No games to share yet"; return; }
     const known = computeKnownPlayers().find(p => p.id === state.me);

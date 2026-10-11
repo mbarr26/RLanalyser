@@ -42,6 +42,9 @@ class StubAccount:
     def sign_out(self):
         self._email = None
 
+    def forget(self):
+        self._email = None
+
     def fetch_entitlement(self):
         self._maybe_fail()
         return dict(self.entitlement, email=self._email)
@@ -140,10 +143,19 @@ def test_offline_refresh_keeps_the_cached_entitlement():
     assert "error" not in state and state["plan"] == "pro" and state["reason"] == "offline"
 
 
-def test_expired_session_is_reported_on_refresh():
-    a, acc, *_ = make("me@x.co")
+def test_expired_session_signs_the_user_out_on_refresh():
+    a, acc, store, _ = make("me@x.co", {"entitlement": pro_entitlement()})
     acc.fail = ("session_expired", "Please sign in again.")
-    assert a.refresh()["code"] == "session_expired"
+    out = a.refresh()
+    assert out["code"] == "session_expired" and out["needsSignIn"] and not acc.signed_in()
+    assert "entitlement" not in store["config"]
+
+
+def test_other_refresh_errors_keep_the_user_signed_in():
+    a, acc, *_ = make("me@x.co")
+    acc.fail = ("bad_response", "Something odd.")
+    out = a.refresh()
+    assert out["code"] == "bad_response" and acc.signed_in()
 
 
 def test_sign_out_clears_everything():

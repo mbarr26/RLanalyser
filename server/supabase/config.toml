@@ -1,0 +1,8 @@
+# Minimal Supabase CLI config. Replace project_id with your project's reference (Project settings -> General),
+# or run `supabase link --project-ref <ref>` which fills it in.
+project_id = "rl-analyser"
+
+# Stripe calls this one, not a signed-in user, so it can't be asked for a user token.
+# It protects itself by checking Stripe's signature instead (see the function).
+[functions.stripe-webhook]
+verify_jwt = false

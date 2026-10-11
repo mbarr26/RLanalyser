@@ -5,6 +5,7 @@
 // replay, stat tabs and the AI panel for one replay) and "progress" (the full progress page).
 
 const state = {
+  meta: null,           // what Python said at start-up (see get_meta)
   me: null,
   statGroups: {},
   progressStats: [],
@@ -79,6 +80,7 @@ function mean(values) {
 
 async function init() {
   const meta = await pywebview.api.get_meta();
+  state.meta = meta;
   state.me = meta.config.me;
   state.statGroups = meta.statGroups;
   state.progressStats = meta.progressStats;
@@ -90,13 +92,33 @@ async function init() {
   state.chart = new CHART.TrendChart($("trend-chart"));
   state.homeChart = new CHART.TrendChart($("home-chart"));
   bindUi();
+  accountUi.apply(meta.account);     // the plan badge and banners; also opens the landing page if nobody is signed in
   await doRefresh();
-  if (!meta.onboarded) welcome.start();
+  if (meta.account.needsSignIn) landingUi.show(meta.account);
+  else startFirstRun();
   setInterval(() => {
     if (Date.now() - lastRefresh < 2000) return;
     if (homeDirty && state.view === "home") reloadHome();
     else if (progressDirty && state.view === "progress") reloadProgressLists();
   }, 500);
+}
+
+// The first-run welcome guide, once someone is signed in (or straight away when there are no accounts)
+function startFirstRun() {
+  if (state.meta && !state.meta.onboarded && !state.onboardStarted) {
+    state.onboardStarted = true;
+    welcome.start();
+  }
+}
+
+// Called when the landing page is left because someone signed in
+function enterApp() {
+  landingUi.hide();
+  showView("home");
+  homeDirty = progressDirty = true;
+  goalsUi.load();
+  coachUi.invalidate();
+  startFirstRun();
 }
 
 if (window.pywebview) init(); else window.addEventListener("pywebviewready", init);
@@ -383,12 +405,14 @@ function watchMoment(time) {
 
 // Record about 8 seconds of the replay around a moment and save it as a video the user can share.
 async function clipMoment(time, btn) {
+  if (!accountUi.can("clips")) { accountUi.paywall("clips"); return; }
   if (!state.viewer) { $("status").textContent = "Wait for the replay to load first"; return; }
   const label = btn.textContent;
   btn.disabled = true; btn.textContent = "Recording\u2026";
   try {
     const url = await state.viewer.recordClip(time - 5, 8);
     const saved = await pywebview.api.save_file(`rl-clip-${Math.round(time)}s.webm`, url);
+    if (accountUi.guard(saved)) return;
     if (saved && saved.error) $("status").textContent = saved.error;
     else if (saved) $("status").textContent = `Saved ${saved.path}`;
   } catch (e) {
@@ -437,7 +461,7 @@ async function loadHomeProgress() {
   const rate = (data.wins + data.losses) ? `  ·  ${Math.round(data.wins / (data.wins + data.losses) * 100)}% win rate` : "";
   const known = computeKnownPlayers().find(p => p.id === state.me);
   $("home-summary").innerHTML = data.count
-    ? `${escapeHtml(known ? known.name : "You")} <span class="sub">&middot; ${data.count} games &middot; ${data.wins} W &middot; ${data.losses} L${rate}</span>`
+    ? `${escapeHtml(known ? known.name : "You")} <span class="sub">&middot; ${data.count} games &middot; ${data.wins} W &middot; ${data.losses} L${rate}</span>${limitNote(data)}`
     : '<span class="sub">No games for this mode yet</span>';
   renderHomeCards(data);
   drawHomeChart();
@@ -446,11 +470,20 @@ async function loadHomeProgress() {
 // The "Your rank" dropdown only appears for a single mode that we have benchmark data for.
 function renderRankPicker(mode) {
   const wrap = $("home-rank-wrap");
+  // Rank benchmarks are Pro: Free sees a lock that opens the upgrade dialog (only for a single mode)
+  $("home-rank-lock").hidden = accountUi.can("benchmarks") || mode === "All";
   wrap.hidden = !state.rankModes.includes(mode);
   if (wrap.hidden) return;
   const chosen = state.ranks[mode] || "";
   $("home-rank").innerHTML = `<option value="">Not set</option>` +
     state.rankBands.map(b => `<option${b === chosen ? " selected" : ""}>${escapeHtml(b)}</option>`).join("");
+}
+
+// Free shows only the latest few games: say so, with a way to get the rest
+function limitNote(data) {
+  if (!data.limited) return "";
+  return ` <span class="history-note">Showing your latest ${data.limited.shown} of ${data.limited.total} games.
+    <button data-upgrade="history">Unlock your full history</button></span>`;
 }
 
 function ordinalSuffix(n) {
@@ -522,7 +555,7 @@ function renderHomeCards(data) {
     const card = document.createElement("button");
     card.className = "stat-card" + (col === state.homeStat ? " selected" : "");
     let trend = all === null ? "" : `avg ${fmtPy(fmt, all)}`, trendClass = "";
-    if (all !== null && recent !== null && values.length >= 3) {
+    if (all !== null && recent !== null && values.length > 10) {   // last 10 vs all-time needs more than 10 games
       const diff = recent - all;
       const arrow = Math.abs(diff) < 1e-9 ? "" : diff > 0 ? "▲ " : "▼ ";
       trend = `${arrow}${fmtPy(fmt, Math.abs(diff))} vs avg ${fmtPy(fmt, all)}`;
@@ -629,7 +662,7 @@ async function loadProgress() {
 function renderProgressSummary(data) {
   const rate = (data.wins + data.losses) ? `  ·  ${Math.round(data.wins / (data.wins + data.losses) * 100)}% win rate` : "";
   $("progress-summary").innerHTML = data.count
-    ? `${data.count} games <span class="sub">&middot; ${data.wins} W &middot; ${data.losses} L${rate}</span>`
+    ? `${data.count} games <span class="sub">&middot; ${data.wins} W &middot; ${data.losses} L${rate}</span>${limitNote(data)}`
     : '<span class="sub">No games for this player/mode yet</span>';
 }
 

@@ -11,14 +11,18 @@
 
   <div class="titlebar">
     <div class="wordmark"><span class="rl">RL</span> <span class="word">Analyser</span> <span id="app-version" class="app-version"></span></div>
-    <div class="folder-row">
+    <div class="folder-row app-only">
       <span id="folder-label" class="folder-label">No folder selected</span>
     </div>
-    <button id="choose-folder-btn" class="btn">Choose folder&hellip;</button>
-    <button id="refresh-btn" class="btn">Refresh</button>
-    <button id="setup-btn" class="btn btn-small" title="Replay folder, who you are and your rank">Setup guide</button>
+    <button id="choose-folder-btn" class="btn app-only">Choose folder&hellip;</button>
+    <button id="refresh-btn" class="btn app-only">Refresh</button>
+    <button id="setup-btn" class="btn btn-small app-only" title="Replay folder, who you are and your rank">Setup guide</button>
     <button id="update-btn" class="btn btn-small" title="">Check for updates</button>
-    <span id="status" class="status"></span>
+    <div class="account-wrap app-only">
+      <button id="account-btn" class="btn btn-small hidden" title="Your account" aria-haspopup="true"></button>
+      <div id="account-menu" class="account-menu hidden" role="menu"></div>
+    </div>
+    <span id="status" class="status app-only"></span>
   </div>
 
   <div id="update-banner" class="update-banner hidden">
@@ -32,6 +36,22 @@
       <button id="update-later" class="btn">Later</button>
       <button id="update-cancel" class="btn hidden">Cancel</button>
     </div>
+  </div>
+
+  <div id="account-banner" class="update-banner hidden">
+    <div class="update-text">
+      <div id="account-banner-title" class="update-title"></div>
+      <div id="account-banner-notes" class="update-notes"></div>
+    </div>
+    <div class="update-actions">
+      <button id="account-banner-action" class="btn btn-primary hidden"></button>
+      <button id="account-banner-close" class="btn">Dismiss</button>
+    </div>
+  </div>
+
+  <!-- Landing: sign in / create an account. Shown instead of the app until someone is signed in. -->
+  <div id="view-landing" class="view">
+    <div id="landing" class="landing"></div>
   </div>
 
   <!-- Welcome: first-run setup, also reachable from "Setup guide" -->
@@ -62,6 +82,7 @@
               <span class="field-label">Your rank</span>
               <select id="home-rank" class="select" style="min-width:150px;" title="Compare your stats with players of this rank"></select>
             </span>
+            <button id="home-rank-lock" class="btn btn-small" data-upgrade="benchmarks" hidden title="Rank benchmarks are part of Pro">&#128274; Compare with your rank</button>
             <button id="share-home-btn" class="btn" title="Save a picture of your progress">Share</button>
             <button id="see-all-btn" class="btn">See all stats &rarr;</button>
           </div>
@@ -245,6 +266,13 @@
     </div>
   </div>
 
+  <!-- Upgrade dialog: shown when a Pro feature is used, and while waiting for a payment -->
+  <div id="upgrade-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="upgrade-title">
+    <div class="modal-card card">
+      <div id="upgrade-body"></div>
+    </div>
+  </div>
+
 </div>
 
 <script src="chart.js"></script>
@@ -255,5 +283,7 @@
 <script src="share.js"></script>
 <script src="coach.js"></script>
 <script src="update.js"></script>
+<script src="account.js"></script>
+<script src="landing.js"></script>
 </body>
 </html>

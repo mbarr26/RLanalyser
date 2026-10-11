@@ -5,9 +5,14 @@
 
 import os
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_submodules, copy_metadata
 
 hiddenimports = collect_submodules("webview.platforms") + ["clr_loader", "pythonnet"]
+# keyring (the saved sign-in) finds its Windows Credential Manager backend through package metadata,
+# which PyInstaller doesn't copy by default. Without these the installed app would silently forget the
+# sign-in every time it closes.
+hiddenimports += collect_submodules("keyring.backends") + ["win32ctypes.core", "win32ctypes.pywin32"]
+metadata = copy_metadata("keyring") + copy_metadata("jaraco.classes") + copy_metadata("jaraco.functools") + copy_metadata("jaraco.context")
 
 a = Analysis(
     ["rl_analyser.py"],
@@ -16,7 +21,7 @@ a = Analysis(
     datas=[
         ("ui", "ui"),
         ("tools", "tools"),       # rrrocket.exe, llama-server/ (+ licences)
-    ] + ([("benchmarks.json", ".")] if os.path.exists("benchmarks.json") else []),   # rank tables (dev_tools/build_benchmarks.py)
+    ] + metadata + ([("benchmarks.json", ".")] if os.path.exists("benchmarks.json") else []),   # rank tables (dev_tools/build_benchmarks.py)
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],

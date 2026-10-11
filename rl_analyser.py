@@ -11,6 +11,7 @@ message queue, just targeting a page instead of Tk widgets.
 import json
 import threading
 import time
+import webbrowser
 from dataclasses import asdict
 from pathlib import Path
 
@@ -25,6 +26,7 @@ import benchmarks
 import coach
 import goals
 import labels
+import service
 import updater
 from analysis import STAT_GROUPS
 from frame_data import load_game_frames
@@ -674,6 +676,12 @@ class Api:
 
     def delete_account(self):
         return self._changed(ACCESS.delete_account())
+
+    def open_link(self, url):
+        """Open the Terms or Privacy page in the browser. Only those two addresses, and only over https."""
+        if url and url in (service.TERMS_URL, service.PRIVACY_URL) and url.startswith("https://"):
+            webbrowser.open(url)
+        return None
 
     @staticmethod
     def _changed(result):

@@ -39,18 +39,23 @@ FEATURES = {
 }
 
 FEATURE_NAMES = {
-    "coach": "The AI coach", "goals": "Weekly goals", "benchmarks": "Rank benchmarks",
-    "share": "Share cards", "clips": "Replay clips", "history": "Your full history",
+    "coach": "AI coach", "goals": "Weekly goals", "benchmarks": "Rank benchmarks",
+    "share": "Share cards", "clips": "Replay clips", "history": "Full history",
 }
 
 PAID_STATUSES = {"active", "trialing"}
 
 
 def _time(value):
+    """An ISO time as a naive local datetime. The server sends UTC with an offset ("...+00:00" or "...Z"),
+    our own checked_at is already local and naive, and the two can't be compared until they match."""
     try:
-        return datetime.fromisoformat(value) if value else None
-    except (TypeError, ValueError):
+        when = datetime.fromisoformat(value.replace("Z", "+00:00")) if value else None
+    except (AttributeError, TypeError, ValueError):
         return None
+    if when is not None and when.tzinfo is not None:
+        when = when.astimezone().replace(tzinfo=None)
+    return when
 
 
 def describe(entitlement, now=None):

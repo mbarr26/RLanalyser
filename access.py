@@ -96,6 +96,10 @@ class Access:
         try:
             self._store(self.account.fetch_entitlement())
         except AccountError as e:
+            if e.code == "session_expired":
+                # the server no longer accepts this sign-in (password changed, account deleted, signed out elsewhere)
+                self.account.forget()
+                self._store(None)
             if e.code not in ("offline", "server"):
                 out = self.state()
                 out["error"], out["code"] = str(e), e.code

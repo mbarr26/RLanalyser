@@ -69,7 +69,7 @@ const coachUi = (() => {
 
   // The AI analysis starts by itself the first time a match is opened (once the model is installed)
   function maybeAutoStart() {
-    if (!c.data || !c.status || !c.status.ready || c.working || c.data.report) return;
+    if (!c.data || c.data.aiLocked || !c.status || !c.status.ready || c.working || c.data.report) return;
     const key = `${c.path}|${c.data.me}`;
     if (c.autoStarted.has(key)) return;
     c.autoStarted.add(key);
@@ -100,6 +100,18 @@ const coachUi = (() => {
     updateStatus();
     const box = $("coach-setup");
     box.innerHTML = "";
+    // The written analysis and the chat are Pro; the moments and findings above stay free
+    document.querySelector(".ai-chat").style.display = c.data && c.data.aiLocked ? "none" : "";
+    if (c.data && c.data.aiLocked) {
+      box.appendChild(el("div", "coach-muted",
+        "The AI coach writes a plain-English analysis of every match and answers your questions about it, all on your own PC."));
+      const row = el("div", "coach-row");
+      const btn = el("button", "btn btn-primary", "🔒 Unlock the AI coach");
+      btn.dataset.upgrade = "coach";
+      row.appendChild(btn);
+      box.appendChild(row);
+      return;
+    }
     const s = c.status;
     if (!s || !s.engine) {
       box.appendChild(el("div", "coach-muted", "The AI engine files are missing from this install, so only the findings above are available."));
@@ -252,7 +264,7 @@ const coachUi = (() => {
     c.downloadError = "";
     c.download = { done: 0, total: 1, phase: "download" };
     renderSetup();
-    await pywebview.api.coach_download();
+    if (accountUi.guard(await pywebview.api.coach_download())) { c.download = null; renderSetup(); }
   }
 
   function updateDownload() {
@@ -271,7 +283,7 @@ const coachUi = (() => {
     c.working = "starting";
     c.writing.add(c.path);
     renderSetup();
-    await pywebview.api.coach_generate(c.path);
+    if (accountUi.guard(await pywebview.api.coach_generate(c.path))) { c.working = null; c.writing.delete(c.path); renderSetup(); }
   }
 
   // ---------- chat ----------
@@ -324,7 +336,8 @@ const coachUi = (() => {
     log.push({ role: "user", text });
     log.push({ role: "assistant", text: "" });
     renderChat();
-    await pywebview.api.coach_ask(c.path, text);
+    const locked = await pywebview.api.coach_ask(c.path, text);
+    if (accountUi.guard(locked)) { c.asking = false; renderChat(); }
   }
 
   function clearChat() {

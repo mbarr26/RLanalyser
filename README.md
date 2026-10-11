@@ -352,7 +352,7 @@ trend chart's data colour is the categorical blue, not the violet.
 
 ## Updating
 
-**Latest release: 1.3.0** (published to the local update folder `Documents\RLAnalyser-Updates`; an installed 1.2.0 offers it from **Check for updates**).
+**Latest release: 1.4.0** (published to the local update folder `Documents\RLAnalyser-Updates`; an installed 1.3.0 offers it from **Check for updates**).
 
 **Releasing a new version** (you):
 1. Raise `APP_VERSION` in `version.py` (e.g. `1.2.0`).

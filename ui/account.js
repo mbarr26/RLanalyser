@@ -44,7 +44,7 @@ const accountUi = (() => {
     renderButton();
     renderBanner();
     $("demo-chip").classList.toggle("hidden", !st.demo);
-    if (!$("account-menu").classList.contains("hidden")) renderMenu();
+    if (motion.isOpen($("account-menu"))) renderMenu();
     if (a.modal) renderModal();
     if (st.needsSignIn && state.view !== "landing" && state.meta) landingUi.show(st);
     else if (!st.needsSignIn && state.view === "landing") enterApp();
@@ -97,8 +97,8 @@ const accountUi = (() => {
 
   function renderBanner() {
     const banner = $("account-banner"), info = bannerFor(a.st);
-    if (!info || a.bannerDismissed === info.key) { banner.classList.add("hidden"); return; }
-    banner.classList.remove("hidden");
+    if (!info || a.bannerDismissed === info.key) { motion.hide(banner); return; }
+    motion.show(banner);
     banner.classList.toggle("error", info.key !== "offline");
     $("account-banner-title").textContent = info.title;
     $("account-banner-notes").textContent = info.notes;
@@ -106,7 +106,7 @@ const accountUi = (() => {
     action.classList.toggle("hidden", !info.action);
     action.textContent = info.action || "";
     action.onclick = info.run || null;
-    $("account-banner-close").onclick = () => { a.bannerDismissed = info.key; banner.classList.add("hidden"); };
+    $("account-banner-close").onclick = () => { a.bannerDismissed = info.key; motion.hide(banner); };
   }
 
   // ---------- the account menu ----------
@@ -153,12 +153,12 @@ const accountUi = (() => {
 
   function toggleMenu() {
     const menu = $("account-menu");
-    if (menu.classList.contains("hidden")) { renderMenu(); menu.classList.remove("hidden"); }
+    if (!motion.isOpen(menu)) { renderMenu(); motion.show(menu); }
     else closeMenu();
   }
 
   function closeMenu() {
-    $("account-menu").classList.add("hidden");
+    motion.hide($("account-menu"));
   }
 
   async function manage() {
@@ -176,8 +176,8 @@ const accountUi = (() => {
 
   function renderModal() {
     const m = a.modal, box = $("upgrade-modal"), body = $("upgrade-body"), st = a.st;
-    if (!m || !st) { box.classList.add("hidden"); return; }
-    box.classList.remove("hidden");
+    if (!m || !st) { motion.hide(box); return; }
+    motion.show(box);
     const close = '<button class="btn" data-act="close">Not now</button>';
     if (m.mode === "done") {
       body.innerHTML = `<h2 id="upgrade-title">You're Pro</h2>

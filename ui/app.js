@@ -163,6 +163,7 @@ function showView(name) {
   state.view = name;
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === `view-${name}`));
   if (name !== "match") stopViewer();
+  motion.clearScrolled();   // a freshly shown page starts at the top, so the title bar goes back to flat
 }
 
 function goHome() {

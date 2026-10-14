@@ -116,6 +116,23 @@
     }, { passive: true });
   }
 
+  // The hero replay leans a little toward the pointer (and the floating chips a little further, for depth).
+  // Only two CSS variables change, on pointer-move and through requestAnimationFrame; the CSS spring in
+  // .replay / .float does the smoothing and carries it back to rest when the pointer leaves. Mouse and pen only.
+  function tilt() {
+    const stage = $(".stage");
+    if (!stage || reduced || !window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+    let raf = 0, x = 0, y = 0;
+    const apply = () => { raf = 0; stage.style.setProperty("--tx", x.toFixed(3)); stage.style.setProperty("--ty", y.toFixed(3)); };
+    stage.addEventListener("pointermove", e => {
+      const r = stage.getBoundingClientRect();
+      x = Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width - 0.5) * 2));
+      y = Math.max(-1, Math.min(1, ((e.clientY - r.top) / r.height - 0.5) * 2));
+      if (!raf) raf = requestAnimationFrame(apply);
+    }, { passive: true });
+    stage.addEventListener("pointerleave", () => { x = 0; y = 0; if (!raf) raf = requestAnimationFrame(apply); });
+  }
+
   function onVisible(el, fn, once = true) {
     if (!("IntersectionObserver" in window)) { fn(); return; }
     const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { fn(); if (once) io.disconnect(); } }), { threshold: 0.35 });
@@ -342,7 +359,7 @@
   }
 
   function init() {
-    buildChrome(); fillConfig(); loadRelease(); reveals(); spotlight(); counters(); bars(); typing(); copyButtons(); thanksPage();
+    buildChrome(); fillConfig(); loadRelease(); reveals(); spotlight(); tilt(); counters(); bars(); typing(); copyButtons(); thanksPage();
     const canvas = $("#replay-canvas");
     if (canvas && canvas.getContext) replay(canvas);
   }

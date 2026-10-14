@@ -40,7 +40,7 @@ const updateUi = (() => {
 
   function showBanner({ title, notes = "", error = false, install = false, later = true, cancel = false, progress = false }) {
     const banner = $("update-banner");
-    banner.classList.remove("hidden");
+    motion.show(banner);
     banner.classList.toggle("error", error);
     $("update-title").textContent = title;
     $("update-notes").textContent = notes;
@@ -51,7 +51,7 @@ const updateUi = (() => {
   }
 
   function hideBanner() {
-    $("update-banner").classList.add("hidden");
+    motion.hide($("update-banner"));
   }
 
   function showAvailable() {

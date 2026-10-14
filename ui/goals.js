@@ -14,7 +14,7 @@ const goalsUi = (() => {
     box.innerHTML = `<section class="alert-card goals lock-card">
       <div><span class="alert-kicker">Weekly goals</span>
         <div class="sub">Get goals picked from your weakest stats, with drills and training packs to hit them.</div></div>
-      <button class="btn btn-small primary" data-upgrade="goals">&#128274; Unlock with Pro</button></section>`;
+      <button class="btn btn-small primary" data-upgrade="goals">${motion.lockIcon} Unlock with Pro</button></section>`;
   }
 
   async function copyCode(code, btn) {

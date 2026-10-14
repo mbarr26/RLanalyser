@@ -510,8 +510,8 @@ function statMeta(col) {
 
 const REDUCED_MOTION = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-// A tiny trend line for the last 12 games. The stroke gradient uses user-space units because a
-// perfectly flat line has no height, and a bounding-box gradient would not paint it at all.
+// A tiny trend line for the last 12 games. Its colours come from CSS (.spark in styles.css), so it follows
+// the light / dark theme without redrawing. `id` is kept for the callers' sake.
 function sparkline(values, id) {
   const v = values.filter(x => x !== null && x !== undefined && !Number.isNaN(x)).slice(-12);
   if (v.length < 2) return "";
@@ -520,14 +520,8 @@ function sparkline(values, id) {
   const pts = v.map((x, i) => [(i / (v.length - 1)) * W, H - pad - ((x - lo) / span) * (H - pad * 2)]);
   const line = pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
   return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
-    <defs>
-      <linearGradient id="sg-${id}" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="${W}" y2="0">
-        <stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#3987e5"/></linearGradient>
-      <linearGradient id="sa-${id}" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="${H}">
-        <stop offset="0" stop-color="#7c3aed" stop-opacity=".38"/><stop offset="1" stop-color="#7c3aed" stop-opacity="0"/></linearGradient>
-    </defs>
-    <polygon class="area" points="0,${H} ${line} ${W},${H}" fill="url(#sa-${id})"/>
-    <polyline class="line" points="${line}" stroke="url(#sg-${id})"/>
+    <polygon class="area" points="0,${H} ${line} ${W},${H}"/>
+    <polyline class="line" points="${line}"/>
   </svg>`;
 }
 

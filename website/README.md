@@ -1,7 +1,7 @@
 # RL Analyser website
 
-A static marketing and download site in the app's own look: dark layered surfaces, one violet accent, blue/orange for
-data. **Plain HTML, CSS and a little JavaScript. No build step, no framework, no cookies, no analytics.** Upload this
+A static marketing and download site in the app's own Apple-style look: it follows the visitor's light or dark setting,
+chrome is neutral (black, white, grey) and colour (blue/orange, green) only ever means data. **Plain HTML, CSS and a little JavaScript. No build step, no framework, no cookies, no analytics.** Upload this
 folder to any static host.
 
 ```
@@ -30,11 +30,11 @@ needs a server.)
 | To change... | Edit |
 |---|---|
 | Product name, tagline, price text, support email, social links, which sections show | `site.config.js` |
-| Colours, glow, corner radius, fonts | the `:root { ... }` tokens at the top of `assets/site.css` (the app's palette; change one value and the whole site follows) |
+| Colours, corner radius, fonts, motion | the `:root { ... }` tokens at the top of `assets/site.css`: the light values first, then the dark ones under `@media (prefers-color-scheme: dark)` (the app's palette; change one value and the whole site follows) |
 | Headline, section text, FAQ answers, feature list | `index.html` (plain text, easy to find) |
 | The animated replay in the hero (speed, colours, goal timing) | the `replay()` function in `assets/site.js` |
 | The price on the page | `site.config.js` **and** `service.py` (`PRICE_TEXT`) **and** the price in Stripe: keep all three equal |
-| The share image | edit `tools/og-template.html`, open it in a 1200x630 window, screenshot it over `assets/og-image.png` |
+| The share image | edit `tools/og-template.html`, open it in a 1200x630 window, screenshot it over `assets/og-image.png` (headless: `msedge --headless=new --window-size=1200,630 --screenshot=og.png file:///.../tools/og-template.html`) |
 | Real screenshots instead of the drawn mockups | drop images in `assets/` and swap them in for the `.mock` blocks (alt text required) |
 
 Everything on the site that describes the product (40+ stats, 8 key-moment types, 8 rank bands, model sizes, the Free and

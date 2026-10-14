@@ -1,22 +1,26 @@
 // Trend chart: one stat per game (dots) with a rolling average (line) and a hover tooltip.
-// Canvas port of the app's original Tkinter chart. The colours below are the dark chart chrome
-// from the dataviz skill and match styles.css, so the chart reads as part of the same system.
-// The data colour is the categorical blue (not the violet UI accent): colour in a chart means data.
+// Canvas port of the app's original Tkinter chart. A canvas can't use CSS variables directly, so the colours are
+// read from the page's computed styles (styles.css tokens) each time it draws, and it redraws when the system
+// switches between light and dark. The data colour is the categorical blue: colour in a chart means data.
 
 const CHART = (() => {
   const ROLLING_GAMES = 5;
-  const INK = "#f4f4f7";
-  const INK_SECONDARY = "#b4b4c0";
-  const GRID = "#26262d";
-  const SURFACE = "#0d0d11";        // the card the canvas sits on
-  const GAME_DOT = "#3987e5";       // categorical slot 1, dark-mode step
   const GAME_DOT_ALPHA = 0.6;       // de-emphasised against the average line
-  const AVERAGE_LINE = "#3987e5";
-  const AVERAGE_GLOW = "rgba(57, 135, 229, 0.75)";
-  const AREA_TOP = "rgba(57, 135, 229, 0.30)";
-  const TOOLTIP_BG = "#15151b";
-  const TOOLTIP_BORDER = "rgba(255, 255, 255, 0.16)";
   const PAD_LEFT = 54, PAD_RIGHT = 20, PAD_TOP = 40, PAD_BOTTOM = 32;
+
+  function theme() {
+    const style = getComputedStyle(document.documentElement);
+    const css = (name, fallback) => style.getPropertyValue(name).trim() || fallback;
+    const data = css("--blue", "#3987e5");
+    return {
+      INK: css("--ink", "#f5f5f7"),
+      INK_SECONDARY: css("--ink-secondary", "#aeaeb2"),
+      GRID: css("--grid", "#38383a"),
+      SURFACE: css("--surface", "#1c1c1e"),   // the card the canvas sits on
+      GAME_DOT: data,
+      AVERAGE_LINE: data,
+    };
+  }
 
   function niceTicks(lo, hi, count = 5) {
     if (hi <= lo) { lo -= 1; hi += 1; }
@@ -41,6 +45,7 @@ const CHART = (() => {
       this.dpr = window.devicePixelRatio || 1;
 
       new ResizeObserver(() => this.draw()).observe(canvas);
+      window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => this.draw());
       canvas.addEventListener("mousemove", e => this.onMotion(e));
       canvas.addEventListener("mouseleave", () => this.hideHover());
     }
@@ -70,6 +75,7 @@ const CHART = (() => {
     draw() {
       const { width, height } = this.size();
       const ctx = this.ctx;
+      const { INK, INK_SECONDARY, GRID, SURFACE, GAME_DOT, AVERAGE_LINE } = theme();
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
       ctx.clearRect(0, 0, width, height);
       ctx.fillStyle = SURFACE;
@@ -140,16 +146,16 @@ const CHART = (() => {
         average.push([xOf(i), yOf(window_.reduce((a, b) => a + b, 0) / window_.length)]);
       }
       if (average.length > 1) {
-        const fill = ctx.createLinearGradient(0, top, 0, bottom);
-        fill.addColorStop(0, AREA_TOP);
-        fill.addColorStop(1, "rgba(57, 135, 229, 0)");
+        ctx.save();
         ctx.beginPath();
         ctx.moveTo(average[0][0], bottom);
         for (const [x, y] of average) ctx.lineTo(x, y);
         ctx.lineTo(average[average.length - 1][0], bottom);
         ctx.closePath();
-        ctx.fillStyle = fill;
+        ctx.globalAlpha = 0.12;      // a flat, quiet area under the line (no gradient)
+        ctx.fillStyle = AVERAGE_LINE;
         ctx.fill();
+        ctx.restore();
       }
 
       // Dots (each game)
@@ -157,7 +163,6 @@ const CHART = (() => {
         const x = xOf(i), y = yOf(v);
         const hot = this.hoverIndex === i;
         ctx.save();
-        if (hot) { ctx.shadowColor = AVERAGE_GLOW; ctx.shadowBlur = 14; }
         ctx.beginPath();
         ctx.arc(x, y, hot ? 6 : 4.5, 0, Math.PI * 2);
         ctx.globalAlpha = hot ? 1 : GAME_DOT_ALPHA;
@@ -182,8 +187,6 @@ const CHART = (() => {
         ctx.lineWidth = 2.25;
         ctx.lineJoin = "round";
         ctx.lineCap = "round";
-        ctx.shadowColor = AVERAGE_GLOW;
-        ctx.shadowBlur = 10;
         ctx.stroke();
         ctx.restore();
 
@@ -205,6 +208,7 @@ const CHART = (() => {
 
     drawLegend(width) {
       const ctx = this.ctx;
+      const { INK_SECONDARY, GAME_DOT, AVERAGE_LINE } = theme();
       const y = 16;
       ctx.font = "11px var(--font, 'Segoe UI'), sans-serif";
       ctx.fillStyle = INK_SECONDARY;
@@ -261,8 +265,10 @@ const CHART = (() => {
     showHover(dot, rect) {
       if (!this._tip) {
         const tip = document.createElement("div");
-        tip.style.cssText = `position:fixed;pointer-events:none;background:${TOOLTIP_BG};border:1px solid ${TOOLTIP_BORDER};` +
-          `border-radius:8px;padding:7px 10px;font-size:11.5px;color:${INK};box-shadow:0 12px 32px -8px rgba(0,0,0,.85),0 0 0 1px rgba(124,58,237,.18);` +
+        // a small floating material; the CSS variables make it follow the theme with no extra code
+        tip.style.cssText = "position:fixed;pointer-events:none;background:var(--material-thick);" +
+          "backdrop-filter:var(--material-blur);-webkit-backdrop-filter:var(--material-blur);border:1px solid var(--hairline);" +
+          "border-radius:10px;padding:7px 11px;font-size:11.5px;color:var(--ink);box-shadow:var(--shadow-2);" +
           "white-space:pre;z-index:100;line-height:1.5;";
         document.body.appendChild(tip);
         this._tip = tip;

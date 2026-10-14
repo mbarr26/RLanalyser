@@ -27,6 +27,7 @@ import coach
 import goals
 import labels
 import service
+import theme
 import updater
 from analysis import STAT_GROUPS
 from frame_data import load_game_frames
@@ -762,9 +763,10 @@ class Api:
         return None
 
 
-def dark_title_bar(window):
-    """Best effort: a dark Windows title bar to match the page (Windows 10 20H1+ and 11).
+def themed_title_bar(window, dark):
+    """Best effort: a Windows title bar in the page's light or dark colours (Windows 10 20H1+ and 11).
 
+    Chosen once at start-up from the system setting (see theme.py); the page itself switches live through CSS.
     Anything that goes wrong (older Windows, a different window backend) is ignored: the window
     just keeps the normal title bar.
     """
@@ -779,11 +781,12 @@ def dark_title_bar(window):
             number = ctypes.c_int(value)
             set_attribute(hwnd, attribute, ctypes.byref(number), ctypes.sizeof(number))
 
-        apply(20, 1)               # DWMWA_USE_IMMERSIVE_DARK_MODE (19 on early Windows 10 builds)
-        apply(19, 1)
-        apply(35, 0x00070505)      # DWMWA_CAPTION_COLOR (Windows 11): #050507 as 0x00BBGGRR
-        apply(34, 0x00070505)      # DWMWA_BORDER_COLOR
-        apply(36, 0x00F7F4F4)      # DWMWA_TEXT_COLOR: #f4f4f7
+        caption, text = theme.title_bar_colours(dark)
+        apply(20, 1 if dark else 0)    # DWMWA_USE_IMMERSIVE_DARK_MODE (19 on early Windows 10 builds)
+        apply(19, 1 if dark else 0)
+        apply(35, caption)             # DWMWA_CAPTION_COLOR (Windows 11)
+        apply(34, caption)             # DWMWA_BORDER_COLOR
+        apply(36, text)                # DWMWA_TEXT_COLOR
     except Exception:
         pass
 
@@ -814,6 +817,7 @@ def main():
         saved = ACCESS.account.session() or {}
         if saved.get("access_token") not in demo.tokens and saved.get("refresh_token") not in demo.refresh:
             ACCESS.sign_out()          # a sign-in from an earlier demo that the demo accounts file no longer knows
+    dark = theme.system_prefers_dark()
     WINDOW = webview.create_window(
         "RL Analyser",
         str(UI_DIR / "index.html"),
@@ -821,9 +825,9 @@ def main():
         width=1440,
         height=900,
         min_size=(1100, 700),
-        background_color="#050507",   # matches the page, so there is no white flash while it loads
+        background_color=theme.background(dark),   # matches the page, so there is no wrong-coloured flash while it loads
     )
-    WINDOW.events.shown += lambda: dark_title_bar(WINDOW)
+    WINDOW.events.shown += lambda: themed_title_bar(WINDOW, dark)
     threading.Thread(target=watch_account, daemon=True).start()
     webview.start()
     coach.stop_server()   # the AI engine is a separate process; don't leave it running

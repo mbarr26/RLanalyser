@@ -106,7 +106,8 @@ const coachUi = (() => {
       box.appendChild(el("div", "coach-muted",
         "The AI coach writes a plain-English analysis of every match and answers your questions about it, all on your own PC."));
       const row = el("div", "coach-row");
-      const btn = el("button", "btn btn-primary", "🔒 Unlock the AI coach");
+      const btn = el("button", "btn btn-primary");
+      btn.innerHTML = `${motion.lockIcon} Unlock the AI coach`;
       btn.dataset.upgrade = "coach";
       row.appendChild(btn);
       box.appendChild(row);

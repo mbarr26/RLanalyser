@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="color-scheme" content="dark" />
+<meta name="color-scheme" content="light dark" />
 <title>RL Analyser</title>
 <link rel="stylesheet" href="styles.css" />
 </head>
@@ -78,12 +78,12 @@
           </div>
           <div class="strip-controls">
             <span class="field-label">Mode</span>
-            <select id="home-mode" class="select" style="min-width:90px;"><option>All</option></select>
+            <select id="home-mode" class="select select--sm"><option>All</option></select>
             <span id="home-rank-wrap" hidden>
               <span class="field-label">Your rank</span>
-              <select id="home-rank" class="select" style="min-width:150px;" title="Compare your stats with players of this rank"></select>
+              <select id="home-rank" class="select select--md" title="Compare your stats with players of this rank"></select>
             </span>
-            <button id="home-rank-lock" class="btn btn-small" data-upgrade="benchmarks" hidden title="Rank benchmarks are part of Pro">&#128274; Compare with your rank</button>
+            <button id="home-rank-lock" class="btn btn-small" data-upgrade="benchmarks" hidden title="Rank benchmarks are part of Pro"><svg class="icon-lock" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/></svg>Compare with your rank</button>
             <button id="share-home-btn" class="btn" title="Save a picture of your progress">Share</button>
             <button id="see-all-btn" class="btn">See all stats &rarr;</button>
           </div>
@@ -230,10 +230,10 @@
     <div class="progress-page">
       <div class="progress-controls">
         <span class="field-label">Player</span>
-        <select id="player-select" class="select" style="min-width:260px;"></select>
+        <select id="player-select" class="select select--lg"></select>
         <button id="me-btn" class="btn" disabled>This is me</button>
         <span class="field-label">Mode</span>
-        <select id="mode-select" class="select" style="min-width:90px;"><option>All</option></select>
+        <select id="mode-select" class="select select--sm"><option>All</option></select>
       </div>
 
       <div id="progress-summary" class="progress-summary"></div>

@@ -3,9 +3,9 @@
 A Windows desktop app for your Rocket League replays. The home page shows how your
 stats are trending with every replay as a tile; opening a replay plays the whole match
 in 2D while a local AI coach analyses it and answers your questions. The window is a
-native app (via pywebview) whose UI is an HTML/CSS/JS page — a dark design: near-black
-layered surfaces, frosted-glass bars and menus, one electric-violet accent and spring-based motion
-(see [Design](#design)). It ships as a Windows installer (see
+native app (via pywebview) whose UI is an HTML/CSS/JS page — an Apple-style design that follows your
+system's light or dark setting: neutral black/white/grey chrome, frosted-glass bars and menus, colour only
+for data, and spring-based motion (see [Design](#design)). It ships as a Windows installer (see
 [Building the installer](#building-the-installer)).
 
 ## Features
@@ -144,7 +144,7 @@ your email" screen with *resend*, and a Terms/Privacy agreement). Accounts are f
   point an app at it). `RLA_FORCE_PLAN=free|pro` forces a plan for testing.
 
 ### Website
-`website/` is the public marketing and download site, in the app's own look (dark surfaces, violet accent, blue/orange for
+`website/` is the public marketing and download site, in the app's own look (light or dark to match the visitor's system, neutral chrome, blue/orange only for
 data, and the same spring motion, frosted materials and type scale as the app, see [Design](#design)), with the animated 2D replay in the hero, the Free/Pro pricing, an FAQ, a download page that reads the current release,
 draft Terms/Privacy/Refunds pages, and the `thanks.html` page Stripe and Supabase send people back to. It is plain HTML, CSS
 and JavaScript with no build step, no cookies and no analytics. See `website/README.md` for how to preview, tweak, publish a
@@ -199,7 +199,7 @@ directions:
 | `ui/styles.css` | The dark design system: colour tokens at the top, then every component, plus the motion. See [Design](#design). |
 | `ui/app.js` | Page controller: view switching, home strip and replay tiles, match header/tables, the embedded replay, the progress page; talks to `pywebview.api` and handles the pushes from Python (`window.app.*`). |
 | `ui/coach.js` | The AI panel and the Findings / Key moments tabs: model download, the AI report (started automatically), and the chat. |
-| `ui/motion.js` | `motion.show(el)` / `motion.hide(el)`: lets the account menu, upgrade dialog and banners animate out as well as in (toggles `is-open`, adds `hidden` only after the transition), plus the title bar's scroll-edge state. |
+| `ui/motion.js` | `motion.show(el)` / `motion.hide(el)`: lets the account menu, upgrade dialog and banners animate out as well as in (toggles `is-open`, adds `hidden` only after the transition), the title bar's scroll-edge state, and the shared `lockIcon` SVG. |
 | `ui/chart.js` | Canvas-drawn trend chart (per-game dots + rolling average, with hover). |
 | `ui/pitch.js` | Canvas-drawn replay viewer embedded in the match screen: playback, pitch geometry, cars and ball, and `recordClip` (MediaRecorder on the canvas). |
 | `replay_library.py` | Lists replays in a folder, analyses them (`analyse`), caches results as JSON in `cache/`, `LibraryScanner` (background thread that loads/analyses a whole folder) and `ReplayWatcher` (polls the folder for replays saved while the app is open). |
@@ -223,6 +223,7 @@ directions:
 | `touches.py` | Ball touches (the ball's velocity jumps while a car is next to it), 50/50s, beaten-to-the-ball events, dribbles, half-flips / wave dashes, last man, and `skill_stats` (the Challenges / Mechanics / Defence columns). Also the shared per-frame table `live_table` and `find_runs`. Pure measurement, no AI. |
 | `moments.py` | Rule-based key-moment detection (`detect_moments`) and findings about a player (`insights`). Pure measurement, no AI. |
 | `coach.py` | The AI layer: model download, llama.cpp server management, the match "dossier" given to the model, report generation, and chat. Also a CLI: `python coach.py match.replay --me "Name"`. |
+| `theme.py` | Light or dark: reads the Windows app-theme setting and gives the matching window background and title bar colours (see [Design](#design)). Pure apart from one registry read. |
 | `version.py` | `APP_VERSION`: shown in the title bar and used to name the installer. |
 | `rl_analyser.spec` | PyInstaller recipe: a windowed one-folder build with `ui/` and `tools/` bundled. |
 | `service.py` | Constants for the account service: Supabase URL and (public) anon key, price text, Terms/Privacy links. Empty = no accounts, nothing locked. |
@@ -349,42 +350,48 @@ python rl_analyser.py
 
 ## Design
 
-The whole UI is dark (near-black page, slightly lighter cards) with **one accent, electric violet**,
-used for chrome only: buttons, selected tabs/cards/rows, focus rings, the AI panel and glows. **Team
-blue and orange are reserved for data** (which team), so the accent is never either of them, and the
-trend chart's data colour is the categorical blue, not the violet.
+An Apple-style design (the `apple-design` skill) shared by the app and `website/`, with the same token names in
+`ui/styles.css` and `website/assets/site.css`:
 
-- **Tokens** live at the top of `ui/styles.css` (`--paper`, `--surface`, `--surface-2/3`, `--ink*`,
-  `--accent*`, `--blue`, `--orange`...). Change a value there and the whole UI follows.
-- **Canvas colours** can't read CSS variables, so the two canvases keep matching constants:
-  `ui/chart.js` (the constants at the top: ink, grid, surface, data blue, tooltip) and `ui/pitch.js`
-  (`TEAM_COLOURS`, `TEAM_LIGHT`, `TEAM_GLOW`, pitch/pad colours). Retune those together with the CSS.
-- **Contrast:** every text token is at least 4.5:1 on all four surfaces, the accent fill takes white text at
-  4.8:1 or better, and the team pair passes the dataviz skill's colour-blind and contrast checks on the dark
-  surface (the dark chart steps come from that skill).
-- **Apple-style fluid interface** (the `apple-design` skill, applied to the app and `website/`):
-  - **Motion tokens** (`--spring`, `--spring-bouncy`, `--dur-press`, `--dur-ui`): `--spring` is a critically damped
-    spring (damping 1.0, response about 0.32 s) written as a CSS `linear()` easing, so nothing overshoots and an
-    interrupted transition carries on from where the element is. Bounce is reserved for momentum and is barely used.
-  - **Response:** buttons, stat cards, tiles, tabs and menu items shrink slightly the instant they are pressed
-    (`:active`, 100 ms); hover is only a quiet colour change, with no jumping.
-  - **Spatial consistency:** the account menu grows from the account button and the website's mobile menu from its button
-    (`transform-origin` at the trigger), and both go back the way they came; banners slide from and to the top edge; the
-    upgrade dialog dims and blurs what is behind it. These are transitions toggled by `is-open` (`ui/motion.js`), so
-    clicking again mid-way reverses smoothly.
-  - **Materials:** the title bar, match bar, banners, menu, dialog and the website's nav and floating chips are
-    translucent layers (`--material*`: blur + saturation, a light top edge, thicker for bigger surfaces). The divider under
-    the bar appears only once a page has scrolled under it. Decorative glows on text were removed; glows now mark
-    selection, the primary button, the Pro plan and the AI.
-  - **Type:** size-specific tracking and leading (`--track-*`, `--lead-*`): big numbers and headlines tighten, captions open up.
-  - **Website extras:** the replay leans toward the pointer (two CSS variables set from `site.js`, smoothed by the spring), FAQ
-    answers open smoothly, and the endless loops (floating chips, the Pro plan's moving border) are gone; the background drifts only very slowly.
-  - **Accessibility:** "reduce motion" keeps short fades but removes sliding, scaling, tilting and loops;
-    `prefers-reduced-transparency` makes the materials solid; `prefers-contrast: more` gives near-solid surfaces with clear borders.
-- Glows are static CSS, so they cost nothing while the app runs.
-- **Native bits:** `color-scheme: dark` (dropdowns, scrollbars, sliders), the window background (no white flash
-  at start-up) and, on Windows 10/11, a dark title bar (`dark_title_bar` in `rl_analyser.py`; if it isn't
-  supported the normal title bar is kept).
+- **Light and dark follow the system** (`color-scheme: light dark` and `prefers-color-scheme`); both are first-class.
+  Light is a white card on a `#f5f5f7` page, dark is `#1c1c1e` cards on black.
+- **Neutral accent.** Chrome is black, white and grey: the primary button, selected pill and focus ring are ink on
+  light and white on dark (`--accent`, `--on-accent`). **Colour only ever means data**: team blue and orange, good /
+  warning / bad. No gradients and no glows.
+- **Depth** is surface steps plus soft shadows in light mode and hairlines in dark mode. Controls are translucent
+  fills (`--fill*`) so they read on any surface; tabs and the login switch are segmented controls.
+- **Tokens** live at the top of each stylesheet (`--paper`, `--surface`, `--surface-2/3`, `--ink*`, `--fill*`,
+  `--accent*`, `--blue`, `--orange`, `--good-text`...). Change a value there and the whole UI follows.
+- **Canvases** can't use CSS variables, so: `ui/chart.js` reads the tokens at draw time and redraws when the system
+  theme changes; the replay (`ui/pitch.js`, and the website's hero replay) is a fixed dark stage in both themes, like a
+  video player; share-card PNGs (`ui/share.js`) are always the neutral dark card. The sparkline colours are CSS.
+- **Window:** `theme.py` reads the Windows light/dark setting at start-up and `rl_analyser.py` uses it for the window
+  background (no wrong-coloured flash) and the title bar colours (`themed_title_bar`; unsupported = the normal title
+  bar). The page restyles itself live; the native title bar is set once, so a theme change while the app is open
+  shows in the title bar the next time it starts.
+- **Contrast:** text tokens are at least 4.5:1 on the surfaces they sit on in both themes; team and status colours
+  have a separate text step (`--blue-text`, `--good-text`, `--bad-text`...) for use as text.
+
+How it moves and feels:
+- **Motion tokens** (`--spring`, `--spring-bouncy`, `--dur-press`, `--dur-ui`): `--spring` is a critically damped
+  spring (damping 1.0, response about 0.32 s) written as a CSS `linear()` easing, so nothing overshoots and an
+  interrupted transition carries on from where the element is. Bounce is reserved for momentum and is barely used.
+- **Response:** buttons, stat cards, tiles, tabs and menu items shrink slightly the instant they are pressed
+  (`:active`, 100 ms); hover is only a quiet change of fill.
+- **Spatial consistency:** the account menu grows from the account button and the website's mobile menu from its button
+  (`transform-origin` at the trigger), and both go back the way they came; banners slide from and to the top edge; the
+  upgrade dialog dims and blurs what is behind it. These are transitions toggled by `is-open` (`ui/motion.js`), so
+  clicking again mid-way reverses smoothly.
+- **Materials:** the title bar, match bar, banners, menu, dialog, chart tooltip and the website's nav and floating chips
+  are translucent layers (`--material*`: blur + saturation, a light top edge, thicker for bigger surfaces). The divider
+  under the title bar appears only once a page has scrolled under it.
+- **Type:** the system font stack (SF Pro first, then Segoe UI Variable) with size-specific tracking and leading
+  (`--track-*`, `--lead-*`): big numbers and headlines tighten, captions open up; labels are sentence case.
+- **Website:** a centred, large-type hero with the replay below it (it leans slightly toward the pointer), a grouped FAQ
+  whose answers open smoothly, flat cards, and no endless loops (no bobbing chips, moving borders or animated backdrop).
+- **Accessibility:** "reduce motion" keeps short fades but removes sliding, scaling, tilting and loops;
+  `prefers-reduced-transparency` makes the materials solid; `prefers-contrast: more` gives solid surfaces with clear borders.
+- **Share image:** `website/tools/og-template.html` is the source of `website/assets/og-image.png` (see `website/README.md`).
 
 ## Updating
 

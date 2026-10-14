@@ -41,6 +41,11 @@ const motion = (() => {
     document.body.removeAttribute("data-scrolled");
   }
 
+  // A small padlock, drawn with currentColor so it matches its text in either theme (used instead of an emoji).
+  const lockIcon = '<svg class="icon-lock" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/>' +
+    '<path d="M5.5 7V5a2.5 2.5 0 015 0v2"/></svg>';
+
   watchScroll();
-  return { show, hide, isOpen, clearScrolled };
+  return { show, hide, isOpen, clearScrolled, lockIcon };
 })();

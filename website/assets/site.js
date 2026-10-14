@@ -17,9 +17,10 @@
     download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>',
     menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
   };
-  const LOGO = '<svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#6d28d9"/></linearGradient></defs>' +
-    '<rect width="32" height="32" rx="9" fill="url(#lg)"/><circle cx="16" cy="16" r="8.2" fill="none" stroke="#fff" stroke-opacity=".85" stroke-width="1.8"/>' +
-    '<path d="M16 7.8v16.4M7.8 16h16.4" stroke="#fff" stroke-opacity=".4" stroke-width="1.2"/><circle cx="21.4" cy="11.2" r="2.6" fill="#fff"/></svg>';
+  // The logo's colours come from CSS (.logo-bg / .logo-fg / .logo-dot in site.css), so it flips with light and dark.
+  const LOGO = '<svg viewBox="0 0 32 32" aria-hidden="true"><rect class="logo-bg" width="32" height="32" rx="9"/>' +
+    '<circle class="logo-fg" cx="16" cy="16" r="8.2" fill="none" stroke-opacity=".9" stroke-width="1.8"/>' +
+    '<path class="logo-fg" d="M16 7.8v16.4M7.8 16h16.4" stroke-opacity=".4" stroke-width="1.2"/><circle class="logo-dot" cx="21.4" cy="11.2" r="2.6"/></svg>';
 
   // ---------- the shared header and footer (one copy, here, for every page) ----------
   const link = hash => (home ? hash : "index.html" + hash);
@@ -103,17 +104,6 @@
     items.forEach((el, i) => { const sib = el.parentElement ? [...el.parentElement.children].filter(c => c.classList.contains("reveal")).indexOf(el) : 0; el.style.setProperty("--d", Math.max(0, sib) * 0.08 + "s"); });
     const io = new IntersectionObserver(entries => entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { threshold: 0.12, rootMargin: "0px 0px -6% 0px" });
     items.forEach(el => io.observe(el));
-  }
-
-  function spotlight() {
-    if (reduced) return;
-    document.addEventListener("pointermove", e => {
-      const card = e.target.closest && e.target.closest(".card");
-      if (!card) return;
-      const r = card.getBoundingClientRect();
-      card.style.setProperty("--mx", e.clientX - r.left + "px");
-      card.style.setProperty("--my", e.clientY - r.top + "px");
-    }, { passive: true });
   }
 
   // The hero replay leans a little toward the pointer (and the floating chips a little further, for depth).
@@ -278,11 +268,9 @@
 
     function drawBall(time) {
       const [bu, bv] = ballAt(time);
-      trail.forEach(([u, v], i) => { const [x, y] = px(u, v); ctx.beginPath(); ctx.arc(x, y, 2 + i * 0.16, 0, 7); ctx.fillStyle = `rgba(190,170,255,${i / trail.length * 0.5})`; ctx.fill(); });
+      trail.forEach(([u, v], i) => { const [x, y] = px(u, v); ctx.beginPath(); ctx.arc(x, y, 2 + i * 0.16, 0, 7); ctx.fillStyle = `rgba(255,255,255,${i / trail.length * 0.35})`; ctx.fill(); });
       const [x, y] = px(bu, bv), r = Math.max(7, w * 0.017);
-      const g = ctx.createRadialGradient(x - r * .3, y - r * .3, 1, x, y, r);
-      g.addColorStop(0, "#fff"); g.addColorStop(1, "#c4b5fd");
-      ctx.shadowColor = "rgba(167,139,250,.95)"; ctx.shadowBlur = 22; ctx.fillStyle = g;
+      ctx.shadowColor = "rgba(255,255,255,.5)"; ctx.shadowBlur = 10; ctx.fillStyle = "#f5f5f7";   // the ball is just white: it is the thing to follow
       ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
     }
 
@@ -294,8 +282,8 @@
       g.addColorStop(0, `rgba(96,165,250,${0.5 * a})`); g.addColorStop(1, "rgba(96,165,250,0)");
       ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
       ctx.font = `800 ${Math.round(h * 0.13)}px "Segoe UI", system-ui, sans-serif`; ctx.textAlign = "center";
-      ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.shadowColor = "rgba(96,165,250,.9)"; ctx.shadowBlur = 24;
-      ctx.fillText("GOAL!", w / 2, h * 0.5 + h * 0.04 - k * 10); ctx.shadowBlur = 0;
+      ctx.fillStyle = `rgba(255,255,255,${a})`;
+      ctx.fillText("GOAL!", w / 2, h * 0.5 + h * 0.04 - k * 10);
     }
 
     function hudUpdate(time) {
@@ -359,7 +347,7 @@
   }
 
   function init() {
-    buildChrome(); fillConfig(); loadRelease(); reveals(); spotlight(); tilt(); counters(); bars(); typing(); copyButtons(); thanksPage();
+    buildChrome(); fillConfig(); loadRelease(); reveals(); tilt(); counters(); bars(); typing(); copyButtons(); thanksPage();
     const canvas = $("#replay-canvas");
     if (canvas && canvas.getContext) replay(canvas);
   }

@@ -76,7 +76,7 @@ const landingUi = (() => {
           <ul>${PRO.map(f => `<li>${esc(f)}</li>`).join("")}</ul>
         </div>
       </div>
-      <p class="landing-privacy">&#128274; Your replays never leave your PC. We only keep your email address and whether you're subscribed.</p>
+      <p class="landing-privacy">${motion.lockIcon} Your replays never leave your PC. We only keep your email address and whether you're subscribed.</p>
     </section>`;
   }
 

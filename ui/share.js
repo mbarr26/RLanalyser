@@ -1,12 +1,12 @@
 // Share cards: draws a 1200x630 picture of a match or of your progress on a canvas and saves it as a PNG
-// (and copies it to the clipboard when the browser lets us). Colours match the tokens in styles.css; a canvas
-// can't read CSS variables, so they're repeated here.
+// (and copies it to the clipboard when the browser lets us). A share card is a picture people post, so it is
+// always the neutral dark look (the app's dark theme tokens), whatever theme the app is showing.
 
 const share = (() => {
   const W = 1200, H = 630;
-  const INK = "#f4f4f7", SECONDARY = "#b4b4c0", MUTED = "#868695", ACCENT = "#a78bfa";
-  const GOOD = "#4ade80", BAD = "#ec835a", SURFACE = "#15151b";
-  const FONT = '"Segoe UI", system-ui, sans-serif';
+  const INK = "#f5f5f7", SECONDARY = "#aeaeb2", MUTED = "#98989f", ACCENT = "#f5f5f7";
+  const GOOD = "#30d158", BAD = "#ff9f6b", SURFACE = "#1c1c1e", BACKGROUND = "#000000";
+  const FONT = '-apple-system, "SF Pro Display", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif';
 
   function roundRect(ctx, x, y, w, h, r) {
     ctx.beginPath();
@@ -30,15 +30,10 @@ const share = (() => {
     const canvas = document.createElement("canvas");
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext("2d");
-    const bg = ctx.createLinearGradient(0, 0, W, H);
-    bg.addColorStop(0, "#050507"); bg.addColorStop(1, "#1a1030");
-    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-    const glow = ctx.createRadialGradient(W - 120, 60, 10, W - 120, 60, 480);
-    glow.addColorStop(0, "rgba(124,58,237,0.35)"); glow.addColorStop(1, "rgba(124,58,237,0)");
-    ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = BACKGROUND; ctx.fillRect(0, 0, W, H);
 
-    text(ctx, spec.kicker.toUpperCase(), 64, 82, 22, ACCENT, 600);
-    text(ctx, spec.title, 64, 170, 84, spec.titleColour || INK, 700);
+    text(ctx, spec.kicker, 64, 82, 24, SECONDARY, 600);
+    text(ctx, spec.title, 64, 170, 84, spec.titleColour || INK, 700);   // large, plain, no glow
     text(ctx, spec.subtitle, 64, 218, 28, SECONDARY);
 
     const stats = spec.stats.slice(0, 6);
